@@ -1,8 +1,11 @@
 group: io.kestra.plugin.datastudio
 name: "data-studio"
 title: "Google Data Studio"
-description: "Google Data Studio plugin for Kestra"
-body: ""
+description: "Search Data Studio reports and data sources, and manage who can access them."
+body: |
+  Governance tasks for Google Data Studio (the product formerly named Looker Studio, renamed back in April 2026).
+
+  Search assets, read metadata, and grant or revoke access. A polling trigger stores its watermark in the namespace KV store.
 videos: []
 createdBy: "Kestra Core Team"
 managedBy: "Kestra Core Team"

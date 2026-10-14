@@ -3,13 +3,13 @@
 ## What
 
 - Provides plugin components under `io.kestra.plugin.datastudio`.
-- Includes classes such as `Example`, `Trigger`.
+- Includes `assets.Search`, `assets.Get`, `assets.Trigger`, `permissions.Get`, `permissions.Add`, and `permissions.Revoke`.
 
 ## Why
 
-- What user problem does this solve? Teams need a concrete starting point for building and validating new Kestra plugins without recreating the same project scaffolding from scratch.
-- Why would a team adopt this plugin in a workflow? It gives plugin authors a ready-made reference repo they can adapt alongside their own build, test, and publishing workflow.
-- What operational/business outcome does it enable? It shortens plugin delivery time, reduces setup mistakes, and makes internal or partner plugin development more repeatable.
+- Flows can inventory Data Studio reports and data sources and change who has access to them.
+- Governance stays in Kestra instead of a manual pass through the Data Studio sharing dialog.
+- Access reviews and revocations can run on a schedule next to the existing GCP plugin.
 
 ## How
 
@@ -18,6 +18,8 @@
 Single-module plugin. Source packages under `io.kestra.plugin`:
 
 - `datastudio`
+- `datastudio.assets`
+- `datastudio.permissions`
 
 Infrastructure dependencies (Docker Compose services):
 
@@ -25,7 +27,12 @@ Infrastructure dependencies (Docker Compose services):
 
 ### Key Plugin Classes
 
-- `io.kestra.plugin.datastudio.Example`
+- `io.kestra.plugin.datastudio.assets.Search`
+- `io.kestra.plugin.datastudio.assets.Get`
+- `io.kestra.plugin.datastudio.assets.Trigger`
+- `io.kestra.plugin.datastudio.permissions.Get`
+- `io.kestra.plugin.datastudio.permissions.Add`
+- `io.kestra.plugin.datastudio.permissions.Revoke`
 
 ### Project Structure
 
