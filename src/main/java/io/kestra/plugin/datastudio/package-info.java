@@ -3,6 +3,6 @@
     description = "Google Data Studio plugin for Kestra",
     categories = PluginSubGroup.PluginCategory.DATA
 )
-package io.kestra.plugin.data-studio;
+package io.kestra.plugin.datastudio;
 
 import io.kestra.core.models.annotations.PluginSubGroup;

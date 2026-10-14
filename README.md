@@ -45,7 +45,7 @@
 
 ## What
 
-- Provides plugin components under `io.kestra.plugin.data-studio`.
+- Provides plugin components under `io.kestra.plugin.datastudio`.
 - Includes classes such as `Example`, `Trigger`.
 
 ## Running Kestra locally with this plugin

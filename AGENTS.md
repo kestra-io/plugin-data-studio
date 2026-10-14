@@ -2,7 +2,7 @@
 
 ## What
 
-- Provides plugin components under `io.kestra.plugin.data-studio`.
+- Provides plugin components under `io.kestra.plugin.datastudio`.
 - Includes classes such as `Example`, `Trigger`.
 
 ## Why
@@ -17,7 +17,7 @@
 
 Single-module plugin. Source packages under `io.kestra.plugin`:
 
-- `data-studio`
+- `datastudio`
 
 Infrastructure dependencies (Docker Compose services):
 
@@ -25,14 +25,14 @@ Infrastructure dependencies (Docker Compose services):
 
 ### Key Plugin Classes
 
-- `io.kestra.plugin.data-studio.Example`
+- `io.kestra.plugin.datastudio.Example`
 
 ### Project Structure
 
 ```
-plugin-data-studio/
-├── src/main/java/io/kestra/plugin/data-studio/
-├── src/test/java/io/kestra/plugin/data-studio/
+plugin-datastudio/
+├── src/main/java/io/kestra/plugin/datastudio/
+├── src/test/java/io/kestra/plugin/datastudio/
 ├── build.gradle
 └── README.md
 ```

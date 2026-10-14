@@ -1,5 +1,5 @@
-group: io.kestra.plugin.data-studio
-name: "data-studio"
+group: io.kestra.plugin.datastudio
+name: "datastudio"
 title: "Google Data Studio"
 description: "Google Data Studio plugin for Kestra"
 body: ""

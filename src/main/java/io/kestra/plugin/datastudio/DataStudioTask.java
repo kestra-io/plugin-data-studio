@@ -1,4 +1,4 @@
-package io.kestra.plugin.data-studio;
+package io.kestra.plugin.datastudio;
 
 import io.kestra.core.models.annotations.Plugin;
 import io.kestra.core.models.property.Property;
@@ -31,7 +31,7 @@ import org.slf4j.Logger;
 
                 tasks:
                   - id: reverse
-                    type: io.kestra.plugin.data-studio.DataStudioTask
+                    type: io.kestra.plugin.datastudio.DataStudioTask
                     format: "Text to be reverted"
                 """
         )
