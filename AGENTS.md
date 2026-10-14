@@ -30,7 +30,7 @@ Infrastructure dependencies (Docker Compose services):
 ### Project Structure
 
 ```
-plugin-datastudio/
+plugin-data-studio/
 ├── src/main/java/io/kestra/plugin/datastudio/
 ├── src/test/java/io/kestra/plugin/datastudio/
 ├── build.gradle

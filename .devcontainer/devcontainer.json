@@ -1,10 +1,10 @@
 {
-  "name": "plugin-datastudio",
+  "name": "plugin-data-studio",
   "build": {
     "context": ".",
     "dockerfile": "Dockerfile"
   },
-  "workspaceFolder": "/workspaces/plugin-datastudio",
+  "workspaceFolder": "/workspaces/plugin-data-studio",
   "forwardPorts": [8080],
   "customizations": {
     "vscode": {
