@@ -1,8 +1,8 @@
-# Kestra Template Plugin
+# Kestra Google Data Studio Plugin
 
 ## What
 
-- Provides plugin components under `io.kestra.plugin.templates`.
+- Provides plugin components under `io.kestra.plugin.data-studio`.
 - Includes classes such as `Example`, `Trigger`.
 
 ## Why
@@ -17,7 +17,7 @@
 
 Single-module plugin. Source packages under `io.kestra.plugin`:
 
-- `templates`
+- `data-studio`
 
 Infrastructure dependencies (Docker Compose services):
 
@@ -25,14 +25,14 @@ Infrastructure dependencies (Docker Compose services):
 
 ### Key Plugin Classes
 
-- `io.kestra.plugin.templates.Example`
+- `io.kestra.plugin.data-studio.Example`
 
 ### Project Structure
 
 ```
-plugin-template/
-├── src/main/java/io/kestra/plugin/templates/
-├── src/test/java/io/kestra/plugin/templates/
+plugin-data-studio/
+├── src/main/java/io/kestra/plugin/data-studio/
+├── src/test/java/io/kestra/plugin/data-studio/
 ├── build.gradle
 └── README.md
 ```
