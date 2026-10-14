@@ -1,5 +1,5 @@
 @PluginSubGroup(
-    title = "Permissions",
+    title = "Data Studio Permissions",
     description = "List, grant, and revoke access to Data Studio reports and data sources.",
     categories = {PluginSubGroup.PluginCategory.DATA}
 )

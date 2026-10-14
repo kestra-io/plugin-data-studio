@@ -1,6 +1,6 @@
 group: io.kestra.plugin.datastudio.assets
 name: "assets"
-title: "Assets"
+title: "Data Studio Assets"
 description: "Search Data Studio reports and data sources, and watch them for changes."
 body: "Search assets, read metadata for one asset, and poll for created or updated assets. The trigger stores its watermark in the namespace KV store."
 videos: []

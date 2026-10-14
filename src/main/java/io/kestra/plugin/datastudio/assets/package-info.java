@@ -1,5 +1,5 @@
 @PluginSubGroup(
-    title = "Assets",
+    title = "Data Studio Assets",
     description = "Search Data Studio reports and data sources, and watch them for changes.",
     categories = {PluginSubGroup.PluginCategory.DATA}
 )
