@@ -77,8 +77,10 @@ final class Members {
             if (link) {
                 throw new IllegalArgumentException("Sharing with " + member + " requires allowLinkSharing: true");
             }
-            String action = revoke ? "Revoke" : "Grant";
-            throw new IllegalArgumentException(action + " members must use user:, group:, or serviceAccount:. Got: " + member);
+            String expected = revoke
+                ? "Revoke members must use user:, group:, serviceAccount:, domain:, or allUsers. Got: "
+                : "Grant members must use user:, group:, or serviceAccount:. Got: ";
+            throw new IllegalArgumentException(expected + member);
         }
     }
 }

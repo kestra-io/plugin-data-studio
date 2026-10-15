@@ -198,7 +198,7 @@ public final class DataStudioClient implements AutoCloseable {
         try {
             response = this.httpClient.request(request, String.class);
         } catch (HttpClientResponseException e) {
-            throw apiError(e);
+            throw apiError(e, "Data Studio API");
         }
         int code = response.getStatus().getCode();
         String body = response.getBody() == null ? "" : response.getBody();
@@ -239,7 +239,7 @@ public final class DataStudioClient implements AutoCloseable {
         try {
             response = httpClient.request(request, String.class);
         } catch (HttpClientResponseException e) {
-            throw apiError(e);
+            throw apiError(e, "Token endpoint");
         }
         if (response.getStatus().getCode() >= 400) {
             throw new IOException("Token endpoint returned HTTP " + response.getStatus().getCode() + ": " + truncate(response.getBody()));
@@ -318,11 +318,21 @@ public final class DataStudioClient implements AutoCloseable {
         return value == null ? null : value.toString();
     }
 
-    private static IOException apiError(HttpClientResponseException exception) {
+    private static IOException apiError(HttpClientResponseException exception, String label) {
         HttpResponse<?> response = exception.getResponse();
         int code = response == null || response.getStatus() == null ? 0 : response.getStatus().getCode();
-        Object body = response == null ? "" : response.getBody();
-        return new IOException("Data Studio API returned HTTP " + code + ": " + truncate(body == null ? "" : body.toString()), exception);
+        return new IOException(label + " returned HTTP " + code + ": " + truncate(bodyText(response)), exception);
+    }
+
+    private static String bodyText(HttpResponse<?> response) {
+        if (response == null || response.getBody() == null) {
+            return "";
+        }
+        Object body = response.getBody();
+        if (body instanceof byte[] bytes) {
+            return new String(bytes, StandardCharsets.UTF_8);
+        }
+        return body.toString();
     }
 
     private static String truncate(String body) {

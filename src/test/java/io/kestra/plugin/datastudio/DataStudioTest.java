@@ -270,7 +270,10 @@ class DataStudioTest {
             api.status = 403;
             Search task = search(api);
             IOException error = assertThrows(IOException.class, () -> task.run(TestsUtils.mockRunContext(this.runContextFactory, task, Map.of())));
+            assertTrue(error.getMessage().contains("Data Studio API"));
             assertTrue(error.getMessage().contains("403"));
+            assertTrue(error.getMessage().contains("denied"));
+            assertFalse(error.getMessage().contains("[B@"));
         }
     }
 
@@ -289,7 +292,11 @@ class DataStudioTest {
                 .assetTypes(Property.ofValue(List.of("REPORT")))
                 .build();
             IOException error = assertThrows(IOException.class, () -> task.run(TestsUtils.mockRunContext(this.runContextFactory, task, Map.of())));
+            assertTrue(error.getMessage().contains("Token endpoint"));
             assertTrue(error.getMessage().contains("401"));
+            assertTrue(error.getMessage().contains("unauthorized"));
+            assertFalse(error.getMessage().contains("Data Studio API"));
+            assertFalse(error.getMessage().contains("[B@"));
         }
     }
 
@@ -345,7 +352,12 @@ class DataStudioTest {
             .assetName(Property.ofValue("report-1"))
             .members(Property.ofValue(List.of("everyone")))
             .build();
-        assertThrows(IllegalArgumentException.class, () -> revoke.run(TestsUtils.mockRunContext(this.runContextFactory, revoke, Map.of())));
+        IllegalArgumentException revokeError = assertThrows(
+            IllegalArgumentException.class,
+            () -> revoke.run(TestsUtils.mockRunContext(this.runContextFactory, revoke, Map.of()))
+        );
+        assertTrue(revokeError.getMessage().contains("domain:"));
+        assertTrue(revokeError.getMessage().contains("allUsers"));
     }
 
     @Test
