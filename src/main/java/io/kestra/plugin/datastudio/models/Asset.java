@@ -1,5 +1,7 @@
 package io.kestra.plugin.datastudio.models;
 
+import java.time.Instant;
+
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.AllArgsConstructor;
@@ -31,14 +33,14 @@ public class Asset {
     @Schema(title = "Creator email")
     private String creator;
 
-    @Schema(title = "Creation time", description = "RFC 3339 timestamp.")
-    private String createTime;
+    @Schema(title = "Creation time")
+    private Instant createTime;
 
-    @Schema(title = "Update time", description = "RFC 3339 timestamp.")
-    private String updateTime;
+    @Schema(title = "Update time")
+    private Instant updateTime;
 
     @Schema(title = "Asset type", description = "REPORT or DATA_SOURCE.")
-    private String assetType;
+    private AssetType assetType;
 
     @Schema(title = "Trashed", description = "True when the asset is in the trash.")
     private Boolean trashed;

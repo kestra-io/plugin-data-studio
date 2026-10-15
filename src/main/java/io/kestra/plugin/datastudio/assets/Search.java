@@ -20,7 +20,10 @@ import io.kestra.plugin.datastudio.AbstractDataStudioTask;
 import io.kestra.plugin.datastudio.DataStudioClient;
 import io.kestra.plugin.datastudio.FetchResults;
 import io.kestra.plugin.datastudio.models.Asset;
+import io.kestra.plugin.datastudio.models.AssetOrder;
+import io.kestra.plugin.datastudio.models.AssetType;
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 import lombok.Builder;
 import lombok.EqualsAndHashCode;
@@ -71,7 +74,7 @@ public class Search extends AbstractDataStudioTask implements RunnableTask<Searc
     )
     @PluginProperty(group = "source")
     @NotNull
-    private Property<List<String>> assetTypes;
+    private Property<List<AssetType>> assetTypes;
 
     @Schema(
         title = "Search string",
@@ -98,17 +101,17 @@ public class Search extends AbstractDataStudioTask implements RunnableTask<Searc
 
     @Schema(
         title = "Order by",
-        description = "One of `title`, `last_viewed_by_me`, `create_time`, `last_accessed_time`, or `id`."
+        description = "Sort field sent to the API. `TITLE`, `LAST_VIEWED_BY_ME`, `CREATE_TIME`, `LAST_ACCESSED_TIME`, or `ID`."
     )
     @PluginProperty(group = "source")
-    private Property<String> orderBy;
+    private Property<AssetOrder> orderBy;
 
     @Schema(
         title = "Page size",
-        description = "Number of assets to request per page. The API default is 1000."
+        description = "Number of assets to request per page. Must be at least 1. The API default is 1000."
     )
     @PluginProperty(group = "source")
-    private Property<Integer> pageSize;
+    private Property<@Min(1) Integer> pageSize;
 
     @Schema(
         title = "Maximum pages",
@@ -117,11 +120,11 @@ public class Search extends AbstractDataStudioTask implements RunnableTask<Searc
     @PluginProperty(group = "advanced")
     @NotNull
     @Builder.Default
-    private Property<Integer> maxPages = Property.ofValue(DataStudioClient.DEFAULT_MAX_PAGES);
+    private Property<@Min(1) Integer> maxPages = Property.ofValue(DataStudioClient.DEFAULT_MAX_PAGES);
 
     @Schema(
         title = "Fetch type",
-        description = "FETCH returns every asset in the execution context. FETCH_ONE returns the first asset. STORE writes an Ion file to internal storage. NONE returns only the count."
+        description = "STORE writes an Ion file and is the right choice for an organisation-wide inventory. FETCH returns every asset in the execution context and is meant for a small result set. FETCH_ONE returns the first asset from the first page that has one. NONE returns only the count."
     )
     @PluginProperty(group = "main")
     @NotNull
@@ -130,27 +133,30 @@ public class Search extends AbstractDataStudioTask implements RunnableTask<Searc
 
     @Override
     public Output run(RunContext runContext) throws Exception {
-        List<String> types = runContext.render(this.assetTypes).asList(String.class);
-        if (types.isEmpty()) {
+        var rAssetTypes = runContext.render(this.assetTypes).asList(AssetType.class);
+        if (rAssetTypes.isEmpty()) {
             throw new IllegalArgumentException("assetTypes must contain REPORT or DATA_SOURCE");
         }
-        String title = runContext.render(this.title).as(String.class).orElse(null);
-        String owner = runContext.render(this.owner).as(String.class).orElse(null);
-        Boolean includeTrashed = runContext.render(this.includeTrashed).as(Boolean.class).orElse(false);
-        String orderBy = runContext.render(this.orderBy).as(String.class).orElse(null);
-        Integer pageSize = runContext.render(this.pageSize).as(Integer.class).orElse(null);
-        int maxPages = runContext.render(this.maxPages).as(Integer.class).orElse(DataStudioClient.DEFAULT_MAX_PAGES);
-        FetchType renderedFetchType = runContext.render(this.fetchType).as(FetchType.class).orElse(FetchType.FETCH);
+        var rTitle = runContext.render(this.title).as(String.class).orElse(null);
+        var rOwner = runContext.render(this.owner).as(String.class).orElse(null);
+        var rIncludeTrashed = runContext.render(this.includeTrashed).as(Boolean.class).orElse(false);
+        var rOrderBy = runContext.render(this.orderBy).as(AssetOrder.class).map(AssetOrder::getApiValue).orElse(null);
+        var rPageSize = runContext.render(this.pageSize).as(Integer.class).orElse(null);
+        var rMaxPages = runContext.render(this.maxPages).as(Integer.class).orElse(DataStudioClient.DEFAULT_MAX_PAGES);
+        var rFetchType = runContext.render(this.fetchType).as(FetchType.class).orElse(FetchType.FETCH);
+        if (rMaxPages < 1 || (rPageSize != null && rPageSize < 1)) {
+            throw new IllegalArgumentException("maxPages and pageSize must be at least 1");
+        }
 
-        if (FetchType.STORE.equals(renderedFetchType)) {
+        if (FetchType.STORE.equals(rFetchType)) {
             File tempFile = runContext.workingDir().createTempFile(".ion").toFile();
             int count = 0;
             try (OutputStream output = new BufferedOutputStream(new FileOutputStream(tempFile));
                  DataStudioClient client = this.open(runContext)) {
-                for (String assetType : types) {
+                for (AssetType assetType : rAssetTypes) {
                     runContext.logger().info("Searching Data Studio assets of type {}", assetType);
                     int[] written = {0};
-                    client.consumeSearch(assetType, title, owner, includeTrashed, orderBy, pageSize, maxPages, asset -> {
+                    client.consumeSearch(assetType.name(), rTitle, rOwner, rIncludeTrashed, rOrderBy, rPageSize, rMaxPages, asset -> {
                         FileSerde.write(output, asset);
                         written[0]++;
                     });
@@ -163,15 +169,39 @@ public class Search extends AbstractDataStudioTask implements RunnableTask<Searc
                 .build();
         }
 
+        if (FetchType.FETCH_ONE.equals(rFetchType)) {
+            try (DataStudioClient client = this.open(runContext)) {
+                for (AssetType assetType : rAssetTypes) {
+                    var page = client.search(assetType.name(), rTitle, rOwner, rIncludeTrashed, rOrderBy, rPageSize, null);
+                    if (page.getAssets() != null && !page.getAssets().isEmpty()) {
+                        return Output.builder().size(1).asset(page.getAssets().getFirst()).build();
+                    }
+                }
+            }
+            return Output.builder().size(0).build();
+        }
+
+        if (FetchType.NONE.equals(rFetchType)) {
+            int count = 0;
+            try (DataStudioClient client = this.open(runContext)) {
+                for (AssetType assetType : rAssetTypes) {
+                    int[] seen = {0};
+                    client.consumeSearch(assetType.name(), rTitle, rOwner, rIncludeTrashed, rOrderBy, rPageSize, rMaxPages, asset -> seen[0]++);
+                    count += seen[0];
+                }
+            }
+            return Output.builder().size(count).build();
+        }
+
         List<Asset> assets = new ArrayList<>();
         try (DataStudioClient client = this.open(runContext)) {
-            for (String assetType : types) {
+            for (AssetType assetType : rAssetTypes) {
                 runContext.logger().info("Searching Data Studio assets of type {}", assetType);
-                assets.addAll(client.searchAll(assetType, title, owner, includeTrashed, orderBy, pageSize, maxPages));
+                assets.addAll(client.searchAll(assetType.name(), rTitle, rOwner, rIncludeTrashed, rOrderBy, rPageSize, rMaxPages));
             }
         }
 
-        FetchResults.Stored<Asset> stored = FetchResults.apply(runContext, renderedFetchType, assets);
+        FetchResults.Stored<Asset> stored = FetchResults.apply(runContext, rFetchType, assets);
         return Output.builder()
             .size(stored.size())
             .uri(stored.uri())

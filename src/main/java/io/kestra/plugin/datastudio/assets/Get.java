@@ -11,7 +11,9 @@ import io.kestra.core.runners.RunContext;
 import io.kestra.plugin.datastudio.AbstractDataStudioTask;
 import io.kestra.plugin.datastudio.DataStudioClient;
 import io.kestra.plugin.datastudio.models.Asset;
+import io.kestra.plugin.datastudio.models.AssetType;
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 import lombok.Builder;
 import lombok.EqualsAndHashCode;
@@ -27,7 +29,7 @@ import lombok.experimental.SuperBuilder;
 @NoArgsConstructor
 @Schema(
     title = "Get a Data Studio asset",
-    description = "Load metadata for one report or data source. The API has no get-by-id method, so this task walks search pages for each asset type and stops at the first name match. On a large organization that can be many pages. Trashed assets are skipped unless `includeTrashed` is true. The task fails if the scan exceeds `maxPages` without a match, instead of reporting that the asset is missing."
+    description = "Load metadata for one report or data source. The API has no get-by-id method, so this task walks search pages for each asset type and stops at the first name match. On a large organization that can be many pages. Live assets are searched first. `includeTrashed` then searches the trash, because the API returns only trashed assets when that flag is true. The task fails if a scan exceeds `maxPages` without a match."
 )
 @Plugin(
     examples = {
@@ -69,11 +71,11 @@ public class Get extends AbstractDataStudioTask implements RunnableTask<Get.Outp
     )
     @PluginProperty(group = "source")
     @Builder.Default
-    private Property<List<String>> assetTypes = Property.ofValue(List.of("REPORT", "DATA_SOURCE"));
+    private Property<List<AssetType>> assetTypes = Property.ofValue(List.of(AssetType.REPORT, AssetType.DATA_SOURCE));
 
     @Schema(
         title = "Include trashed assets",
-        description = "When true, the lookup also searches the trash. When false, trashed assets are not found."
+        description = "When true, search live assets first and then the trash. The API's `includeTrashed=true` returns only trashed assets, so a trashed asset is not visible in the live scan. When false, trashed assets are not found."
     )
     @PluginProperty(group = "source")
     @NotNull
@@ -87,29 +89,47 @@ public class Get extends AbstractDataStudioTask implements RunnableTask<Get.Outp
     @PluginProperty(group = "advanced")
     @NotNull
     @Builder.Default
-    private Property<Integer> maxPages = Property.ofValue(DataStudioClient.DEFAULT_MAX_PAGES);
+    private Property<@Min(1) Integer> maxPages = Property.ofValue(DataStudioClient.DEFAULT_MAX_PAGES);
 
     @Override
     public Output run(RunContext runContext) throws Exception {
-        String assetName = runContext.render(this.assetName).as(String.class)
+        var rAssetName = runContext.render(this.assetName).as(String.class)
             .orElseThrow(() -> new IllegalArgumentException("assetName is required"));
-        List<String> types = runContext.render(this.assetTypes).asList(String.class);
-        if (types.isEmpty()) {
-            types = List.of("REPORT", "DATA_SOURCE");
+        var rAssetTypes = runContext.render(this.assetTypes).asList(AssetType.class);
+        if (rAssetTypes.isEmpty()) {
+            rAssetTypes = List.of(AssetType.REPORT, AssetType.DATA_SOURCE);
         }
-        boolean includeTrashed = runContext.render(this.includeTrashed).as(Boolean.class).orElse(false);
-        int maxPages = runContext.render(this.maxPages).as(Integer.class).orElse(DataStudioClient.DEFAULT_MAX_PAGES);
+        var rIncludeTrashed = runContext.render(this.includeTrashed).as(Boolean.class).orElse(false);
+        var rMaxPages = runContext.render(this.maxPages).as(Integer.class).orElse(DataStudioClient.DEFAULT_MAX_PAGES);
+        if (rMaxPages < 1) {
+            throw new IllegalArgumentException("maxPages must be at least 1");
+        }
 
         try (DataStudioClient client = this.open(runContext)) {
-            for (String assetType : types) {
-                Asset asset = client.findByName(assetType, assetName, includeTrashed, maxPages);
-                if (asset != null) {
-                    runContext.logger().info("Found Data Studio asset {}", assetName);
-                    return Output.builder().asset(asset).build();
+            Asset live = find(client, rAssetTypes, rAssetName, false, rMaxPages);
+            if (live != null) {
+                runContext.logger().info("Found Data Studio asset {}", rAssetName);
+                return Output.builder().asset(live).build();
+            }
+            if (rIncludeTrashed) {
+                Asset trashed = find(client, rAssetTypes, rAssetName, true, rMaxPages);
+                if (trashed != null) {
+                    runContext.logger().info("Found trashed Data Studio asset {}", rAssetName);
+                    return Output.builder().asset(trashed).build();
                 }
             }
         }
-        throw new IllegalArgumentException("No Data Studio asset named " + assetName);
+        throw new IllegalArgumentException("No Data Studio asset named " + rAssetName + ". Check assetName and assetTypes. Set includeTrashed to true to search the trash.");
+    }
+
+    private static Asset find(DataStudioClient client, List<AssetType> assetTypes, String assetName, boolean trashed, int maxPages) throws Exception {
+        for (AssetType assetType : assetTypes) {
+            Asset asset = client.findByName(assetType.name(), assetName, trashed, maxPages);
+            if (asset != null) {
+                return asset;
+            }
+        }
+        return null;
     }
 
     @Builder

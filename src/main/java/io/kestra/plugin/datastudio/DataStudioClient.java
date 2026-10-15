@@ -7,6 +7,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.KeyFactory;
 import java.security.PrivateKey;
 import java.security.Signature;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Base64;
@@ -21,6 +22,8 @@ import io.kestra.core.http.HttpResponse;
 import io.kestra.core.http.client.HttpClient;
 import io.kestra.core.http.client.HttpClientResponseException;
 import io.kestra.core.http.client.configurations.HttpConfiguration;
+import io.kestra.core.http.client.configurations.TimeoutConfiguration;
+import io.kestra.core.models.property.Property;
 import io.kestra.core.runners.RunContext;
 import io.kestra.core.serializers.JacksonMapper;
 import io.kestra.plugin.datastudio.models.Asset;
@@ -58,20 +61,25 @@ public final class DataStudioClient implements AutoCloseable {
     }
 
     public static DataStudioClient open(RunContext runContext, DataStudioConnection connection, boolean write) throws Exception {
-        String baseUrl = runContext.render(connection.getBaseUrl()).as(String.class)
+        var rBaseUrl = runContext.render(connection.getBaseUrl()).as(String.class)
             .orElse("https://datastudio.googleapis.com/v1");
-        String tokenUri = runContext.render(connection.getTokenUri()).as(String.class)
+        var rTokenUri = runContext.render(connection.getTokenUri()).as(String.class)
             .orElse("https://oauth2.googleapis.com/token");
-        String accessToken = blankToNull(runContext.render(connection.getAccessToken()).as(String.class).orElse(null));
-        String serviceAccount = blankToNull(runContext.render(connection.getServiceAccount()).as(String.class).orElse(null));
-        String subject = blankToNull(runContext.render(connection.getSubject()).as(String.class).orElse(null));
+        var rAccessToken = blankToNull(runContext.render(connection.getAccessToken()).as(String.class).orElse(null));
+        var rServiceAccount = blankToNull(runContext.render(connection.getServiceAccount()).as(String.class).orElse(null));
+        var rSubject = blankToNull(runContext.render(connection.getSubject()).as(String.class).orElse(null));
 
-        HttpClient httpClient = new HttpClient(runContext, HttpConfiguration.builder().build());
+        HttpClient httpClient = new HttpClient(runContext, HttpConfiguration.builder()
+            .timeout(TimeoutConfiguration.builder()
+                .connectTimeout(Property.ofValue(Duration.ofSeconds(30)))
+                .readIdleTimeout(Property.ofValue(Duration.ofMinutes(2)))
+                .build())
+            .build());
         try {
-            String token = accessToken != null
-                ? accessToken
-                : exchangeServiceAccount(runContext, httpClient, serviceAccount, subject, tokenUri, write ? WRITE_SCOPE : READ_SCOPE);
-            return new DataStudioClient(runContext, httpClient, baseUrl, token);
+            String token = rAccessToken != null
+                ? rAccessToken
+                : exchangeServiceAccount(runContext, httpClient, rServiceAccount, rSubject, rTokenUri, write ? WRITE_SCOPE : READ_SCOPE);
+            return new DataStudioClient(runContext, httpClient, rBaseUrl, token);
         } catch (Exception e) {
             httpClient.close();
             throw e;
@@ -243,6 +251,9 @@ public final class DataStudioClient implements AutoCloseable {
         }
         if (response.getStatus().getCode() >= 400) {
             throw new IOException("Token endpoint returned HTTP " + response.getStatus().getCode() + ": " + truncate(response.getBody()));
+        }
+        if (response.getBody() == null || response.getBody().isBlank()) {
+            throw new IOException("Token endpoint returned an empty body");
         }
         Map<String, Object> token = JacksonMapper.ofJson().readValue(response.getBody(), new TypeReference<>() {
         });

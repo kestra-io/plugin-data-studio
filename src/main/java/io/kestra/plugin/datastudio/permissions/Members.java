@@ -35,7 +35,10 @@ final class Members {
                 domain = true;
                 continue;
             }
-            throw new IllegalArgumentException("Grant members must use user:, group:, or serviceAccount:. Got: " + member);
+            String expected = allowLinkSharing
+                ? "Grant members must use user:, group:, serviceAccount:, domain:, or allUsers. Got: "
+                : "Grant members must use user:, group:, or serviceAccount:. Got: ";
+            throw new IllegalArgumentException(expected + member);
         }
         if (linkRole != null) {
             if (!allowLinkSharing) {

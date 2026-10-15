@@ -3,6 +3,7 @@ package io.kestra.plugin.datastudio;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -42,6 +43,7 @@ import io.kestra.plugin.datastudio.assets.Trigger;
 import io.kestra.plugin.datastudio.permissions.Add;
 import io.kestra.plugin.datastudio.permissions.AssetRole;
 import io.kestra.plugin.datastudio.permissions.LinkRole;
+import io.kestra.plugin.datastudio.models.AssetType;
 import io.kestra.plugin.datastudio.permissions.Revoke;
 
 import jakarta.inject.Inject;
@@ -54,21 +56,17 @@ class DataStudioTest {
     private RunContextFactory runContextFactory;
 
     @Test
-    void searchGetPermissionsAndStore() throws Exception {
+    void searchStoresIon() throws Exception {
         try (FakeApi api = FakeApi.start()) {
             api.searchBody = """
                 {"assets":[{"name":"report-1","title":"Sales","owner":"ada@acme.com","assetType":"REPORT","updateTime":"2026-04-01T00:00:00Z"}],"nextPageToken":""}
                 """;
-            api.permissionsBody = """
-                {"permissions":{"VIEWER":{"members":["group:analysts@acme.com"]},"OWNER":{"members":["user:ada@acme.com"]}}}
-                """;
-
             Search search = Search.builder()
                 .id(taskId())
                 .type(Search.class.getName())
                 .accessToken(Property.ofValue("token-1"))
                 .baseUrl(Property.ofValue(api.baseUrl()))
-                .assetTypes(Property.ofValue(List.of("REPORT")))
+                .assetTypes(Property.ofValue(List.of(AssetType.REPORT)))
                 .owner(Property.ofValue("ada@acme.com"))
                 .fetchType(Property.ofValue(FetchType.STORE))
                 .build();
@@ -84,18 +82,35 @@ class DataStudioTest {
                 FileSerde.read(input, rows::add);
             }
             assertEquals(1, rows.size());
+        }
+    }
 
+    @Test
+    void getFindsAsset() throws Exception {
+        try (FakeApi api = FakeApi.start()) {
+            api.searchBody = """
+                {"assets":[{"name":"report-1","title":"Sales","owner":"ada@acme.com","assetType":"REPORT","updateTime":"2026-04-01T00:00:00Z"}],"nextPageToken":""}
+                """;
             Get get = Get.builder()
                 .id(taskId())
                 .type(Get.class.getName())
                 .accessToken(Property.ofValue("token-1"))
                 .baseUrl(Property.ofValue(api.baseUrl()))
                 .assetName(Property.ofValue("report-1"))
-                .assetTypes(Property.ofValue(List.of("REPORT")))
+                .assetTypes(Property.ofValue(List.of(AssetType.REPORT)))
                 .build();
             Get.Output got = get.run(TestsUtils.mockRunContext(this.runContextFactory, get, Map.of()));
             assertEquals("Sales", got.getAsset().getTitle());
+            assertEquals(AssetType.REPORT, got.getAsset().getAssetType());
+        }
+    }
 
+    @Test
+    void permissionsGetListsMembers() throws Exception {
+        try (FakeApi api = FakeApi.start()) {
+            api.permissionsBody = """
+                {"permissions":{"VIEWER":{"members":["group:analysts@acme.com"]},"OWNER":{"members":["user:ada@acme.com"]}}}
+                """;
             io.kestra.plugin.datastudio.permissions.Get permissions = io.kestra.plugin.datastudio.permissions.Get.builder()
                 .id(taskId())
                 .type(io.kestra.plugin.datastudio.permissions.Get.class.getName())
@@ -106,7 +121,15 @@ class DataStudioTest {
             var listed = permissions.run(TestsUtils.mockRunContext(this.runContextFactory, permissions, Map.of()));
             assertEquals(2, listed.getSize());
             assertTrue(listed.getMembers().stream().anyMatch(member -> "group:analysts@acme.com".equals(member.getMember())));
+        }
+    }
 
+    @Test
+    void addGrantsRole() throws Exception {
+        try (FakeApi api = FakeApi.start()) {
+            api.permissionsBody = """
+                {"permissions":{"VIEWER":{"members":["group:analysts@acme.com"]},"OWNER":{"members":["user:ada@acme.com"]}}}
+                """;
             Add add = Add.builder()
                 .id(taskId())
                 .type(Add.class.getName())
@@ -116,11 +139,21 @@ class DataStudioTest {
                 .role(Property.ofValue(AssetRole.VIEWER))
                 .members(Property.ofValue(List.of("group:analysts@acme.com")))
                 .build();
-            add.run(TestsUtils.mockRunContext(this.runContextFactory, add, Map.of()));
+            Add.Output added = add.run(TestsUtils.mockRunContext(this.runContextFactory, add, Map.of()));
             assertEquals("POST", api.lastMethod);
             assertTrue(api.lastPath.contains("permissions:addMembers"));
             assertTrue(api.lastBody.contains("VIEWER"));
+            assertEquals(2, added.getSize());
+            assertTrue(added.getPermissions().get("VIEWER").contains("group:analysts@acme.com"));
+        }
+    }
 
+    @Test
+    void revokeRemovesMember() throws Exception {
+        try (FakeApi api = FakeApi.start()) {
+            api.permissionsBody = """
+                {"permissions":{"VIEWER":{"members":["group:analysts@acme.com"]},"OWNER":{"members":["user:ada@acme.com"]}}}
+                """;
             Revoke revoke = Revoke.builder()
                 .id(taskId())
                 .type(Revoke.class.getName())
@@ -129,9 +162,89 @@ class DataStudioTest {
                 .assetName(Property.ofValue("report-1"))
                 .members(Property.ofValue(List.of("user:former.analyst@acme.com")))
                 .build();
-            revoke.run(TestsUtils.mockRunContext(this.runContextFactory, revoke, Map.of()));
+            Revoke.Output revoked = revoke.run(TestsUtils.mockRunContext(this.runContextFactory, revoke, Map.of()));
             assertTrue(api.lastPath.contains("permissions:revokeAllPermissions"));
             assertTrue(api.lastBody.contains("former.analyst@acme.com"));
+            assertEquals(2, revoked.getSize());
+        }
+    }
+
+    @Test
+    void includeTrashedSearchesLiveAssetsBeforeTheTrash() throws Exception {
+        try (FakeApi api = FakeApi.start()) {
+            api.searchBody = """
+                {"assets":[]}
+                """;
+            api.trashedBody = """
+                {"assets":[{"name":"report-trash","title":"Old","assetType":"REPORT","updateTime":"2026-04-01T00:00:00Z"}]}
+                """;
+            Get hidden = Get.builder()
+                .id(taskId())
+                .type(Get.class.getName())
+                .accessToken(Property.ofValue("token-1"))
+                .baseUrl(Property.ofValue(api.baseUrl()))
+                .assetName(Property.ofValue("report-trash"))
+                .assetTypes(Property.ofValue(List.of(AssetType.REPORT)))
+                .includeTrashed(Property.ofValue(false))
+                .build();
+            assertThrows(IllegalArgumentException.class, () -> hidden.run(TestsUtils.mockRunContext(this.runContextFactory, hidden, Map.of())));
+            assertFalse(api.queries.stream().anyMatch(query -> query != null && query.contains("includeTrashed=true")));
+
+            Get found = Get.builder()
+                .id(taskId())
+                .type(Get.class.getName())
+                .accessToken(Property.ofValue("token-1"))
+                .baseUrl(Property.ofValue(api.baseUrl()))
+                .assetName(Property.ofExpression("{{ inputs.asset_id }}"))
+                .assetTypes(Property.ofExpression("{{ inputs.types }}"))
+                .includeTrashed(Property.ofValue(true))
+                .build();
+            Get.Output output = found.run(TestsUtils.mockRunContext(
+                this.runContextFactory,
+                found,
+                Map.of("asset_id", "report-trash", "types", List.of("REPORT"))
+            ));
+            assertEquals("Old", output.getAsset().getTitle());
+            assertTrue(api.queries.stream().anyMatch(query -> query != null && query.contains("includeTrashed=true")));
+        }
+    }
+
+    @Test
+    void grantErrorListsLinkMembersWhenSharingIsAllowed() {
+        Add add = Add.builder()
+            .id(taskId())
+            .type(Add.class.getName())
+            .accessToken(Property.ofValue("token-1"))
+            .assetName(Property.ofValue("report-1"))
+            .allowLinkSharing(Property.ofValue(true))
+            .members(Property.ofValue(List.of("acme.com")))
+            .build();
+        IllegalArgumentException error = assertThrows(
+            IllegalArgumentException.class,
+            () -> add.run(TestsUtils.mockRunContext(this.runContextFactory, add, Map.of()))
+        );
+        assertTrue(error.getMessage().contains("domain:"));
+        assertTrue(error.getMessage().contains("allUsers"));
+    }
+
+    @Test
+    void fetchOnePermissionsDoNotRepeatTheFullRoleMap() throws Exception {
+        try (FakeApi api = FakeApi.start()) {
+            api.permissionsBody = """
+                {"permissions":{"VIEWER":{"members":["user:ada@acme.com","group:analysts@acme.com"]}}}
+                """;
+            io.kestra.plugin.datastudio.permissions.Get permissions = io.kestra.plugin.datastudio.permissions.Get.builder()
+                .id(taskId())
+                .type(io.kestra.plugin.datastudio.permissions.Get.class.getName())
+                .accessToken(Property.ofValue("token-1"))
+                .baseUrl(Property.ofValue(api.baseUrl()))
+                .assetName(Property.ofValue("report-1"))
+                .fetchType(Property.ofValue(FetchType.FETCH_ONE))
+                .build();
+            var listed = permissions.run(TestsUtils.mockRunContext(this.runContextFactory, permissions, Map.of()));
+            assertEquals("user:ada@acme.com", listed.getMember().getMember());
+            assertNull(listed.getPermissions());
+            assertNull(listed.getMembers());
         }
     }
 
@@ -146,7 +259,7 @@ class DataStudioTest {
                 .type(Trigger.class.getName())
                 .accessToken(Property.ofValue("token-1"))
                 .baseUrl(Property.ofValue(api.baseUrl()))
-                .assetTypes(Property.ofValue(List.of("REPORT")))
+                .assetTypes(Property.ofValue(List.of(AssetType.REPORT)))
                 .interval(Duration.ofMinutes(5))
                 .build();
 
@@ -195,7 +308,7 @@ class DataStudioTest {
                 .subject(Property.ofValue("analyst@acme.com"))
                 .baseUrl(Property.ofValue(api.baseUrl()))
                 .tokenUri(Property.ofValue(api.tokenUri()))
-                .assetTypes(Property.ofValue(List.of("DATA_SOURCE")))
+                .assetTypes(Property.ofValue(List.of(AssetType.DATA_SOURCE)))
                 .fetchType(Property.ofValue(FetchType.NONE))
                 .build();
             api.searchBody = """
@@ -289,7 +402,7 @@ class DataStudioTest {
                 .serviceAccount(Property.ofValue(serviceAccount))
                 .baseUrl(Property.ofValue(api.baseUrl()))
                 .tokenUri(Property.ofValue(api.tokenUri()))
-                .assetTypes(Property.ofValue(List.of("REPORT")))
+                .assetTypes(Property.ofValue(List.of(AssetType.REPORT)))
                 .build();
             IOException error = assertThrows(IOException.class, () -> task.run(TestsUtils.mockRunContext(this.runContextFactory, task, Map.of())));
             assertTrue(error.getMessage().contains("Token endpoint"));
@@ -473,7 +586,7 @@ class DataStudioTest {
                 .type(Trigger.class.getName())
                 .accessToken(Property.ofValue("token-1"))
                 .baseUrl(Property.ofValue(api.baseUrl()))
-                .assetTypes(Property.ofValue(List.of("REPORT")))
+                .assetTypes(Property.ofValue(List.of(AssetType.REPORT)))
                 .maxPages(Property.ofValue(1))
                 .interval(Duration.ofMinutes(5))
                 .build();
@@ -538,7 +651,7 @@ class DataStudioTest {
             .type(Search.class.getName())
             .accessToken(Property.ofValue("token-1"))
             .baseUrl(Property.ofValue(api.baseUrl()))
-            .assetTypes(Property.ofValue(List.of("REPORT")))
+            .assetTypes(Property.ofValue(List.of(AssetType.REPORT)))
             .fetchType(Property.ofValue(fetchType));
         if (maxPages != null) {
             builder.maxPages(Property.ofValue(maxPages));
@@ -552,7 +665,7 @@ class DataStudioTest {
             .type(Trigger.class.getName())
             .accessToken(Property.ofValue("token-1"))
             .baseUrl(Property.ofValue(api.baseUrl()))
-            .assetTypes(Property.ofValue(List.of("REPORT")))
+            .assetTypes(Property.ofValue(List.of(AssetType.REPORT)))
             .interval(Duration.ofMinutes(5))
             .build();
     }
@@ -596,6 +709,7 @@ class DataStudioTest {
         private String searchBody = """
             {"assets":[]}
             """;
+        private String trashedBody;
         private String permissionsBody = """
             {"permissions":{}}
             """;
@@ -646,6 +760,9 @@ class DataStudioTest {
                     int call = api.searchCalls++;
                     response = ("{\"assets\":[{\"name\":\"report-" + call + "\",\"title\":\"Page\",\"assetType\":\"REPORT\",\"updateTime\":\"2026-04-01T00:00:00Z\"}],\"nextPageToken\":\"page-" + (call + 1) + "\"}")
                         .getBytes(StandardCharsets.UTF_8);
+                    code = api.status;
+                } else if (query != null && query.contains("includeTrashed=true") && api.trashedBody != null) {
+                    response = api.trashedBody.getBytes(StandardCharsets.UTF_8);
                     code = api.status;
                 } else if (api.searchPages != null) {
                     int index = query != null && query.contains("pageToken=page-2") ? 1 : 0;

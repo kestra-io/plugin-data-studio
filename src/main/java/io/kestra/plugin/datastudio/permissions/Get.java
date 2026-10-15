@@ -75,23 +75,24 @@ public class Get extends AbstractDataStudioTask implements RunnableTask<Get.Outp
 
     @Override
     public Output run(RunContext runContext) throws Exception {
-        String assetName = runContext.render(this.assetName).as(String.class).orElseThrow();
-        FetchType renderedFetchType = runContext.render(this.fetchType).as(FetchType.class).orElse(FetchType.FETCH);
+        var rAssetName = runContext.render(this.assetName).as(String.class)
+            .orElseThrow(() -> new IllegalArgumentException("assetName is required"));
+        var rFetchType = runContext.render(this.fetchType).as(FetchType.class).orElse(FetchType.FETCH);
 
         Permissions permissions;
         try (DataStudioClient client = this.open(runContext)) {
-            runContext.logger().info("Reading permissions for Data Studio asset {}", assetName);
-            permissions = client.getPermissions(assetName);
+            runContext.logger().info("Reading permissions for Data Studio asset {}", rAssetName);
+            permissions = client.getPermissions(rAssetName);
         }
 
         List<Member> members = flatten(permissions);
-        FetchResults.Stored<Member> stored = FetchResults.apply(runContext, renderedFetchType, members);
+        FetchResults.Stored<Member> stored = FetchResults.apply(runContext, rFetchType, members);
         return Output.builder()
             .size(stored.size())
             .uri(stored.uri())
             .member(stored.one())
             .members(stored.many())
-            .permissions(renderedFetchType == FetchType.STORE || renderedFetchType == FetchType.NONE ? null : roleMap(permissions))
+            .permissions(FetchType.FETCH.equals(rFetchType) ? roleMap(permissions) : null)
             .build();
     }
 
@@ -149,7 +150,7 @@ public class Get extends AbstractDataStudioTask implements RunnableTask<Get.Outp
 
         @Schema(
             title = "Permissions by role",
-            description = "Role name to member identifiers. Omitted when `fetchType` is STORE or NONE."
+            description = "Role name to member identifiers. Set only when `fetchType` is FETCH, so FETCH_ONE does not repeat the full member list."
         )
         private final Map<String, List<String>> permissions;
     }

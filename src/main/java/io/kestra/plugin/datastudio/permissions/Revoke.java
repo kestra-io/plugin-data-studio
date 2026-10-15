@@ -57,7 +57,7 @@ import lombok.experimental.SuperBuilder;
 public class Revoke extends AbstractDataStudioTask implements RunnableTask<Revoke.Output> {
 
     @Schema(title = "Asset name", description = "The Data Studio asset ID.")
-    @PluginProperty(group = "source")
+    @PluginProperty(group = "main")
     @NotNull
     private Property<String> assetName;
 
@@ -65,21 +65,21 @@ public class Revoke extends AbstractDataStudioTask implements RunnableTask<Revok
         title = "Members",
         description = "Members to remove. Each entry must use `user:`, `group:`, `serviceAccount:`, `domain:`, or `allUsers`."
     )
-    @PluginProperty(group = "source")
+    @PluginProperty(group = "main")
     @NotNull
     private Property<List<String>> members;
 
     @Override
     public Output run(RunContext runContext) throws Exception {
-        String assetName = runContext.render(this.assetName).as(String.class)
+        var rAssetName = runContext.render(this.assetName).as(String.class)
             .orElseThrow(() -> new IllegalArgumentException("assetName is required"));
-        List<String> members = runContext.render(this.members).asList(String.class);
-        Members.validateRevoke(members);
+        var rMembers = runContext.render(this.members).asList(String.class);
+        Members.validateRevoke(rMembers);
 
         Permissions permissions;
         try (DataStudioClient client = this.open(runContext, true)) {
-            runContext.logger().info("Revoking access on Data Studio asset {} for {}", assetName, members);
-            permissions = client.revokeMembers(assetName, members);
+            runContext.logger().info("Revoking access on Data Studio asset {} for {}", rAssetName, rMembers);
+            permissions = client.revokeMembers(rAssetName, rMembers);
         }
         return Output.builder()
             .permissions(Get.roleMap(permissions))

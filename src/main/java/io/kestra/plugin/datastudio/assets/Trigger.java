@@ -31,7 +31,9 @@ import io.kestra.core.storages.kv.KVValueAndMetadata;
 import io.kestra.plugin.datastudio.DataStudioClient;
 import io.kestra.plugin.datastudio.DataStudioConnection;
 import io.kestra.plugin.datastudio.models.Asset;
+import io.kestra.plugin.datastudio.models.AssetType;
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 import lombok.Builder;
 import lombok.EqualsAndHashCode;
@@ -125,7 +127,7 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
     @PluginProperty(group = "source")
     @NotNull
     @Builder.Default
-    private Property<List<String>> assetTypes = Property.ofValue(List.of("REPORT"));
+    private Property<List<AssetType>> assetTypes = Property.ofValue(List.of(AssetType.REPORT));
 
     @Schema(
         title = "Maximum pages",
@@ -134,7 +136,16 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
     @PluginProperty(group = "advanced")
     @NotNull
     @Builder.Default
-    private Property<Integer> maxPages = Property.ofValue(DataStudioClient.DEFAULT_MAX_PAGES);
+    private Property<@Min(1) Integer> maxPages = Property.ofValue(DataStudioClient.DEFAULT_MAX_PAGES);
+
+    @Schema(
+        title = "Maximum assets in the output",
+        description = "Cap on `assets` in the trigger variables. `size` stays the full number of changed assets. Default 100."
+    )
+    @PluginProperty(group = "advanced")
+    @NotNull
+    @Builder.Default
+    private Property<@Min(1) Integer> maxAssetsInOutput = Property.ofValue(100);
 
     @Schema(
         title = "Interval",
@@ -148,15 +159,16 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
     @Override
     public Optional<Execution> evaluate(ConditionContext conditionContext, TriggerContext context) throws Exception {
         RunContext runContext = conditionContext.getRunContext();
-        List<String> types = runContext.render(this.assetTypes).asList(String.class);
-        int maxPages = runContext.render(this.maxPages).as(Integer.class).orElse(DataStudioClient.DEFAULT_MAX_PAGES);
-        if (maxPages < 1) {
-            throw new IllegalArgumentException("maxPages must be at least 1");
+        var rAssetTypes = runContext.render(this.assetTypes).asList(AssetType.class);
+        var rMaxPages = runContext.render(this.maxPages).as(Integer.class).orElse(DataStudioClient.DEFAULT_MAX_PAGES);
+        var rMaxAssetsInOutput = runContext.render(this.maxAssetsInOutput).as(Integer.class).orElse(100);
+        if (rMaxPages < 1 || rMaxAssetsInOutput < 1) {
+            throw new IllegalArgumentException("maxPages and maxAssetsInOutput must be at least 1");
         }
         List<Asset> assets = new ArrayList<>();
         try (DataStudioClient client = DataStudioClient.open(runContext, this, false)) {
-            for (String assetType : types) {
-                assets.addAll(client.searchAll(assetType, null, null, false, null, null, maxPages));
+            for (AssetType assetType : rAssetTypes) {
+                assets.addAll(client.searchAll(assetType.name(), null, null, false, null, null, rMaxPages));
             }
         }
 
@@ -187,7 +199,7 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
             .assetType(first.getAssetType())
             .updateTime(first.getUpdateTime())
             .size(changed.size())
-            .assets(changed)
+            .assets(changed.size() <= rMaxAssetsInOutput ? changed : changed.subList(0, rMaxAssetsInOutput))
             .build();
         Execution execution = TriggerService.generateExecution(this, conditionContext, context, output);
         write(kv, key, current);
@@ -238,15 +250,18 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
         private final String name;
 
         @Schema(title = "Type of the first changed asset")
-        private final String assetType;
+        private final AssetType assetType;
 
         @Schema(title = "Update time of the first changed asset")
-        private final String updateTime;
+        private final Instant updateTime;
 
         @Schema(title = "Number of changed assets")
         private final Integer size;
 
-        @Schema(title = "Changed assets")
+        @Schema(
+            title = "Changed assets",
+            description = "At most `maxAssetsInOutput` assets. `size` is the full count."
+        )
         private final List<Asset> assets;
     }
 
@@ -255,7 +270,7 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
     @NoArgsConstructor
     @JsonIgnoreProperties(ignoreUnknown = true)
     public static class Watermark {
-        private String updateTime;
+        private Instant updateTime;
         private Set<String> names = new LinkedHashSet<>();
 
         static Watermark from(List<Asset> assets) {
@@ -265,12 +280,12 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
                 if (asset.getName() != null) {
                     watermark.names.add(asset.getName());
                 }
-                Instant updated = parse(asset.getUpdateTime());
+                Instant updated = asset.getUpdateTime();
                 if (updated != null && (max == null || updated.isAfter(max))) {
                     max = updated;
                 }
             }
-            watermark.updateTime = max == null ? null : max.toString();
+            watermark.updateTime = max;
             return watermark;
         }
 
@@ -278,16 +293,8 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
             if (asset.getName() == null || this.names == null || !this.names.contains(asset.getName())) {
                 return true;
             }
-            Instant updated = parse(asset.getUpdateTime());
-            Instant watermark = parse(this.updateTime);
-            return updated != null && (watermark == null || updated.isAfter(watermark));
-        }
-
-        private static Instant parse(String value) {
-            if (value == null || value.isBlank()) {
-                return null;
-            }
-            return Instant.parse(value);
+            Instant updated = asset.getUpdateTime();
+            return updated != null && (this.updateTime == null || updated.isAfter(this.updateTime));
         }
     }
 }
