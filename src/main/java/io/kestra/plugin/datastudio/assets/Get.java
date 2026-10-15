@@ -27,7 +27,7 @@ import lombok.experimental.SuperBuilder;
 @NoArgsConstructor
 @Schema(
     title = "Get a Data Studio asset",
-    description = "Load metadata for one report or data source. The API exposes search rather than a get-by-id method, so this task searches the given asset types and returns the asset whose name matches."
+    description = "Load metadata for one report or data source. The API has no get-by-id method, so this task walks search pages for each asset type and stops at the first name match. On a large organization that can be many pages. Trashed assets are skipped unless `includeTrashed` is true. The task fails if the scan exceeds `maxPages` without a match, instead of reporting that the asset is missing."
 )
 @Plugin(
     examples = {
@@ -71,21 +71,41 @@ public class Get extends AbstractDataStudioTask implements RunnableTask<Get.Outp
     @Builder.Default
     private Property<List<String>> assetTypes = Property.ofValue(List.of("REPORT", "DATA_SOURCE"));
 
+    @Schema(
+        title = "Include trashed assets",
+        description = "When true, the lookup also searches the trash. When false, trashed assets are not found."
+    )
+    @PluginProperty(group = "source")
+    @NotNull
+    @Builder.Default
+    private Property<Boolean> includeTrashed = Property.ofValue(false);
+
+    @Schema(
+        title = "Maximum pages",
+        description = "Fail when one asset type needs more pages than this before the name matches. Default 50."
+    )
+    @PluginProperty(group = "advanced")
+    @NotNull
+    @Builder.Default
+    private Property<Integer> maxPages = Property.ofValue(DataStudioClient.DEFAULT_MAX_PAGES);
+
     @Override
     public Output run(RunContext runContext) throws Exception {
-        String assetName = runContext.render(this.assetName).as(String.class).orElseThrow();
+        String assetName = runContext.render(this.assetName).as(String.class)
+            .orElseThrow(() -> new IllegalArgumentException("assetName is required"));
         List<String> types = runContext.render(this.assetTypes).asList(String.class);
         if (types.isEmpty()) {
             types = List.of("REPORT", "DATA_SOURCE");
         }
+        boolean includeTrashed = runContext.render(this.includeTrashed).as(Boolean.class).orElse(false);
+        int maxPages = runContext.render(this.maxPages).as(Integer.class).orElse(DataStudioClient.DEFAULT_MAX_PAGES);
 
         try (DataStudioClient client = this.open(runContext)) {
             for (String assetType : types) {
-                for (Asset asset : client.searchAll(assetType, null, null, false, null, null)) {
-                    if (assetName.equals(asset.getName())) {
-                        runContext.logger().info("Found Data Studio asset {}", assetName);
-                        return Output.builder().asset(asset).build();
-                    }
+                Asset asset = client.findByName(assetType, assetName, includeTrashed, maxPages);
+                if (asset != null) {
+                    runContext.logger().info("Found Data Studio asset {}", assetName);
+                    return Output.builder().asset(asset).build();
                 }
             }
         }

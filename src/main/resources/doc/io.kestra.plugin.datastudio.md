@@ -1,14 +1,14 @@
 Search reports and data sources, read asset metadata, and manage who can access them.
 
-Data Studio is the Google BI product formerly named Looker Studio (renamed back in April 2026). Its API covers asset inventory and permissions for a Google Workspace or Cloud Identity organization. It does not refresh datasets or render reports.
+Data Studio is Google's BI product for reports and data sources. Its API covers asset inventory and permissions for a Google Workspace or Cloud Identity organization. It does not refresh datasets or render reports.
 
-Authenticate with a service account JSON secret that has the `https://www.googleapis.com/auth/datastudio` scope through domain-wide delegation, or pass an OAuth access token. Set `subject` to the Workspace user the service account should impersonate.
+Authenticate with a service account JSON secret through domain-wide delegation, or pass an OAuth access token. Read tasks request `https://www.googleapis.com/auth/datastudio.readonly`. Add and Revoke request `https://www.googleapis.com/auth/datastudio`. Set `subject` to the Workspace user the service account should impersonate.
 
 ## Tasks
 
 - `assets.Search` searches reports and data sources. Use `fetchType` of `FETCH`, `FETCH_ONE`, or `STORE`.
-- `assets.Get` returns metadata for one asset.
-- `assets.Trigger` polls for created or updated assets. The watermark is stored in the namespace KV store. The first poll only records the current assets.
+- `assets.Get` walks search pages until the asset name matches. The API has no get-by-id method. Set `includeTrashed` to look in the trash.
+- `assets.Trigger` polls for created or updated assets. The watermark key includes the flow id and the trigger id. The first poll only records the current assets. A search past 50 pages fails and leaves the watermark in place.
 - `permissions.Get` lists who has access to an asset.
-- `permissions.Add` grants `VIEWER` or `EDITOR` access. `OWNER` cannot be granted.
-- `permissions.Revoke` removes members from an asset.
+- `permissions.Add` grants `VIEWER` or `EDITOR`. `OWNER` is not a valid role. `allowLinkSharing` must be true before `allUsers`, `domain:`, or a link role can be granted.
+- `permissions.Revoke` removes members. Each member must use `user:`, `group:`, `serviceAccount:`, `domain:`, or `allUsers`.

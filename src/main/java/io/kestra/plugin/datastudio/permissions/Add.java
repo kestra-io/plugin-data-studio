@@ -28,7 +28,7 @@ import lombok.experimental.SuperBuilder;
 @NoArgsConstructor
 @Schema(
     title = "Grant Data Studio access",
-    description = "Add members to a role on a report or data source. The OWNER role cannot be granted through this API."
+    description = "Add members to a role on a report or data source. `role` is VIEWER or EDITOR. OWNER cannot be granted. Link and domain sharing (`allUsers`, `domain:`, `LINK_VIEWER`, `LINK_EDITOR`) requires `allowLinkSharing: true`."
 )
 @Plugin(
     examples = {
@@ -64,15 +64,32 @@ public class Add extends AbstractDataStudioTask implements RunnableTask<Add.Outp
 
     @Schema(
         title = "Role",
-        description = "Role to grant. VIEWER or EDITOR. Members cannot be added to OWNER."
+        description = "Role to grant. VIEWER or EDITOR. OWNER, LINK_VIEWER, and LINK_EDITOR are not accepted here."
     )
     @PluginProperty(group = "source")
     @NotNull
-    private Property<String> role;
+    @Builder.Default
+    private Property<AssetRole> role = Property.ofValue(AssetRole.VIEWER);
+
+    @Schema(
+        title = "Link role",
+        description = "When `allowLinkSharing` is true, grant LINK_VIEWER or LINK_EDITOR instead of `role`."
+    )
+    @PluginProperty(group = "source")
+    private Property<LinkRole> linkRole;
+
+    @Schema(
+        title = "Allow link sharing",
+        description = "Permit `allUsers`, `domain:` members, and `linkRole`. Leave false unless the flow should make an asset public or domain-wide."
+    )
+    @PluginProperty(group = "source")
+    @NotNull
+    @Builder.Default
+    private Property<Boolean> allowLinkSharing = Property.ofValue(false);
 
     @Schema(
         title = "Members",
-        description = "Members to add. Prefix each entry with `user:`, `group:`, or `domain:`."
+        description = "Members to add. Prefix each entry with `user:`, `group:`, or `serviceAccount:`. `domain:` and `allUsers` require `allowLinkSharing`."
     )
     @PluginProperty(group = "source")
     @NotNull
@@ -80,18 +97,20 @@ public class Add extends AbstractDataStudioTask implements RunnableTask<Add.Outp
 
     @Override
     public Output run(RunContext runContext) throws Exception {
-        String assetName = runContext.render(this.assetName).as(String.class).orElseThrow();
-        String role = runContext.render(this.role).as(String.class).orElseThrow();
-        if ("OWNER".equalsIgnoreCase(role)) {
-            throw new IllegalArgumentException("Members cannot be added to the OWNER role");
+        String assetName = runContext.render(this.assetName).as(String.class)
+            .orElseThrow(() -> new IllegalArgumentException("assetName is required"));
+        AssetRole renderedRole = runContext.render(this.role).as(AssetRole.class).orElse(AssetRole.VIEWER);
+        LinkRole renderedLinkRole = runContext.render(this.linkRole).as(LinkRole.class).orElse(null);
+        boolean allowLinkSharing = runContext.render(this.allowLinkSharing).as(Boolean.class).orElse(false);
+        if (renderedLinkRole != null && !allowLinkSharing) {
+            throw new IllegalArgumentException("linkRole requires allowLinkSharing: true");
         }
+        String role = renderedLinkRole != null ? renderedLinkRole.name() : renderedRole.name();
         List<String> members = runContext.render(this.members).asList(String.class);
-        if (members.isEmpty()) {
-            throw new IllegalArgumentException("members must not be empty");
-        }
+        Members.validateGrant(members, allowLinkSharing);
 
         Permissions permissions;
-        try (DataStudioClient client = this.open(runContext)) {
+        try (DataStudioClient client = this.open(runContext, true)) {
             runContext.logger().info("Granting {} on Data Studio asset {} to {}", role, assetName, members);
             permissions = client.addMembers(assetName, role, members);
         }

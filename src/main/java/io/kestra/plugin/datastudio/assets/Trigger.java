@@ -3,10 +3,11 @@ package io.kestra.plugin.datastudio.assets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
@@ -19,6 +20,7 @@ import io.kestra.core.models.property.Property;
 import io.kestra.core.models.triggers.AbstractTrigger;
 import io.kestra.core.models.triggers.PollingTriggerInterface;
 import io.kestra.core.models.triggers.TriggerContext;
+import io.kestra.core.models.triggers.TriggerOutput;
 import io.kestra.core.models.triggers.TriggerService;
 import io.kestra.core.runners.RunContext;
 import io.kestra.core.serializers.JacksonMapper;
@@ -46,7 +48,7 @@ import lombok.experimental.SuperBuilder;
 @NoArgsConstructor
 @Schema(
     title = "Watch Data Studio assets",
-    description = "Poll reports or data sources and start an execution when an asset is created or updated after the watermark stored in the namespace KV store. The first poll records the current assets and does not start an execution."
+    description = "Poll reports or data sources and start an execution when an asset is created or updated after the watermark stored in the namespace KV store. The watermark key includes the flow id and the trigger id, so two flows in the same namespace do not share state. The first poll records the current assets and does not start an execution. A search that exceeds 50 pages fails and does not move the watermark."
 )
 @Plugin(
     examples = {
@@ -73,11 +75,11 @@ import lombok.experimental.SuperBuilder;
         )
     }
 )
-public class Trigger extends AbstractTrigger implements PollingTriggerInterface, DataStudioConnection {
+public class Trigger extends AbstractTrigger implements PollingTriggerInterface, TriggerOutput<Trigger.Output>, DataStudioConnection {
 
     @Schema(
         title = "Service account JSON",
-        description = "Google service account key JSON. The account must be granted the `https://www.googleapis.com/auth/datastudio` scope through domain-wide delegation in a Google Workspace or Cloud Identity organization. Use this or `accessToken`."
+        description = "Google service account key JSON. The trigger requests `https://www.googleapis.com/auth/datastudio.readonly` through domain-wide delegation in a Google Workspace or Cloud Identity organization. Use this or `accessToken`."
     )
     @PluginProperty(secret = true, group = "connection")
     @ToString.Exclude
@@ -85,7 +87,7 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
 
     @Schema(
         title = "Access token",
-        description = "OAuth access token already issued for the `https://www.googleapis.com/auth/datastudio` scope. When set, the service account exchange is skipped."
+        description = "OAuth access token with the `datastudio.readonly` scope. When set, the service account exchange is skipped."
     )
     @PluginProperty(secret = true, group = "connection")
     @ToString.Exclude
@@ -100,7 +102,7 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
 
     @Schema(
         title = "API base URL",
-        description = "Data Studio API root. The product was renamed back from Looker Studio in April 2026; the host remains `datastudio.googleapis.com`."
+        description = "Data Studio API root. Defaults to `https://datastudio.googleapis.com/v1`."
     )
     @PluginProperty(group = "connection")
     @NotNull
@@ -139,15 +141,15 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
         RunContext runContext = conditionContext.getRunContext();
         List<String> types = runContext.render(this.assetTypes).asList(String.class);
         List<Asset> assets = new ArrayList<>();
-        try (DataStudioClient client = DataStudioClient.open(runContext, this)) {
+        try (DataStudioClient client = DataStudioClient.open(runContext, this, false)) {
             for (String assetType : types) {
-                assets.addAll(client.searchAll(assetType, null, null, false, null, null));
+                assets.addAll(client.searchAll(assetType, null, null, false, null, null, DataStudioClient.DEFAULT_MAX_PAGES));
             }
         }
 
         String namespace = conditionContext.getFlow().getNamespace();
         KVStore kv = runContext.namespaceKv(namespace);
-        String key = stateKey();
+        String key = stateKey(context);
         Optional<Watermark> previous = read(kv, key);
         Watermark current = Watermark.from(assets);
         if (previous.isEmpty()) {
@@ -166,25 +168,31 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
 
         Asset first = changed.getFirst();
         runContext.logger().info("Data Studio asset {} changed", first.getName());
-        Map<String, Object> output = new LinkedHashMap<>();
-        output.put("title", first.getTitle());
-        output.put("name", first.getName());
-        output.put("assetType", first.getAssetType());
-        output.put("updateTime", first.getUpdateTime());
-        output.put("size", changed.size());
-        output.put("assets", changed);
+        Output output = Output.builder()
+            .title(first.getTitle())
+            .name(first.getName())
+            .assetType(first.getAssetType())
+            .updateTime(first.getUpdateTime())
+            .size(changed.size())
+            .assets(changed)
+            .build();
         Execution execution = TriggerService.generateExecution(this, conditionContext, context, output);
         write(kv, key, current);
         return Optional.of(execution);
     }
 
-    private String stateKey() {
-        String raw = this.getId() == null ? "watch" : this.getId();
+    private String stateKey(TriggerContext context) {
+        String triggerId = context.getTriggerId() != null ? context.getTriggerId() : this.getId();
+        return "datastudio_assets_" + segment(context.getFlowId()) + "_" + segment(triggerId);
+    }
+
+    private static String segment(String value) {
+        String raw = value == null || value.isBlank() ? "unknown" : value;
         String sanitized = raw.replaceAll("[^a-zA-Z0-9._-]", "_");
         if (sanitized.isEmpty() || !Character.isLetterOrDigit(sanitized.charAt(0))) {
             sanitized = "t" + sanitized;
         }
-        return "datastudio_assets_" + sanitized;
+        return sanitized.length() + "_" + sanitized;
     }
 
     private Optional<Watermark> read(KVStore kv, String key) throws Exception {
@@ -207,13 +215,35 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
         kv.put(key, new KVValueAndMetadata(new KVMetadata("Data Studio asset watermark", (Duration) null), json));
     }
 
+    @Builder
+    @Getter
+    public static class Output implements io.kestra.core.models.tasks.Output {
+        @Schema(title = "Title of the first changed asset")
+        private final String title;
+
+        @Schema(title = "Name of the first changed asset")
+        private final String name;
+
+        @Schema(title = "Type of the first changed asset")
+        private final String assetType;
+
+        @Schema(title = "Update time of the first changed asset")
+        private final String updateTime;
+
+        @Schema(title = "Number of changed assets")
+        private final Integer size;
+
+        @Schema(title = "Changed assets")
+        private final List<Asset> assets;
+    }
+
     @Getter
     @Setter
     @NoArgsConstructor
     @JsonIgnoreProperties(ignoreUnknown = true)
     public static class Watermark {
         private String updateTime;
-        private List<String> names = new ArrayList<>();
+        private Set<String> names = new LinkedHashSet<>();
 
         static Watermark from(List<Asset> assets) {
             Watermark watermark = new Watermark();

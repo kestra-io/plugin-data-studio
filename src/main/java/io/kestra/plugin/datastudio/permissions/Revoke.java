@@ -63,7 +63,7 @@ public class Revoke extends AbstractDataStudioTask implements RunnableTask<Revok
 
     @Schema(
         title = "Members",
-        description = "Members to remove. Prefix each entry with `user:`, `group:`, or `domain:`."
+        description = "Members to remove. Each entry must use `user:`, `group:`, `serviceAccount:`, `domain:`, or `allUsers`."
     )
     @PluginProperty(group = "source")
     @NotNull
@@ -71,14 +71,13 @@ public class Revoke extends AbstractDataStudioTask implements RunnableTask<Revok
 
     @Override
     public Output run(RunContext runContext) throws Exception {
-        String assetName = runContext.render(this.assetName).as(String.class).orElseThrow();
+        String assetName = runContext.render(this.assetName).as(String.class)
+            .orElseThrow(() -> new IllegalArgumentException("assetName is required"));
         List<String> members = runContext.render(this.members).asList(String.class);
-        if (members.isEmpty()) {
-            throw new IllegalArgumentException("members must not be empty");
-        }
+        Members.validateRevoke(members);
 
         Permissions permissions;
-        try (DataStudioClient client = this.open(runContext)) {
+        try (DataStudioClient client = this.open(runContext, true)) {
             runContext.logger().info("Revoking access on Data Studio asset {} for {}", assetName, members);
             permissions = client.revokeMembers(assetName, members);
         }
