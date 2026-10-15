@@ -48,7 +48,7 @@ import lombok.experimental.SuperBuilder;
 @NoArgsConstructor
 @Schema(
     title = "Watch Data Studio assets",
-    description = "Poll reports or data sources and start an execution when an asset is created or updated after the watermark stored in the namespace KV store. The watermark key includes the flow id and the trigger id, so two flows in the same namespace do not share state. The first poll records the current assets and does not start an execution. A search that exceeds 50 pages fails and does not move the watermark."
+    description = "Poll reports or data sources and start an execution when an asset is created or updated after the watermark stored in the namespace KV store. The watermark key includes the flow id and the trigger id, so two flows in the same namespace do not share state. The first poll records the current assets and does not start an execution. A search that exceeds `maxPages` (default 50) fails and does not move the watermark."
 )
 @Plugin(
     examples = {
@@ -128,6 +128,15 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
     private Property<List<String>> assetTypes = Property.ofValue(List.of("REPORT"));
 
     @Schema(
+        title = "Maximum pages",
+        description = "Fail when one asset type needs more pages than this. Default 50. The watermark is not moved, and the partial asset list is discarded."
+    )
+    @PluginProperty(group = "advanced")
+    @NotNull
+    @Builder.Default
+    private Property<Integer> maxPages = Property.ofValue(DataStudioClient.DEFAULT_MAX_PAGES);
+
+    @Schema(
         title = "Interval",
         description = "How often to poll Data Studio. Minimum practical value is PT30S."
     )
@@ -140,10 +149,14 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
     public Optional<Execution> evaluate(ConditionContext conditionContext, TriggerContext context) throws Exception {
         RunContext runContext = conditionContext.getRunContext();
         List<String> types = runContext.render(this.assetTypes).asList(String.class);
+        int maxPages = runContext.render(this.maxPages).as(Integer.class).orElse(DataStudioClient.DEFAULT_MAX_PAGES);
+        if (maxPages < 1) {
+            throw new IllegalArgumentException("maxPages must be at least 1");
+        }
         List<Asset> assets = new ArrayList<>();
         try (DataStudioClient client = DataStudioClient.open(runContext, this, false)) {
             for (String assetType : types) {
-                assets.addAll(client.searchAll(assetType, null, null, false, null, null, DataStudioClient.DEFAULT_MAX_PAGES));
+                assets.addAll(client.searchAll(assetType, null, null, false, null, null, maxPages));
             }
         }
 

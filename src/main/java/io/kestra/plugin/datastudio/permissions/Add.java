@@ -28,7 +28,7 @@ import lombok.experimental.SuperBuilder;
 @NoArgsConstructor
 @Schema(
     title = "Grant Data Studio access",
-    description = "Add members to a role on a report or data source. `role` is VIEWER or EDITOR. OWNER cannot be granted. Link and domain sharing (`allUsers`, `domain:`, `LINK_VIEWER`, `LINK_EDITOR`) requires `allowLinkSharing: true`."
+    description = "Add members to a role on a report or data source. `role` is VIEWER or EDITOR and applies to `user:`, `group:`, `serviceAccount:`, and `domain:` members. `linkRole` is LINK_VIEWER or LINK_EDITOR and applies only to `allUsers` and `domain:` members. One call uses one role, so named members and link members cannot be mixed. `allUsers` and `domain:` require `allowLinkSharing: true`."
 )
 @Plugin(
     examples = {
@@ -73,7 +73,7 @@ public class Add extends AbstractDataStudioTask implements RunnableTask<Add.Outp
 
     @Schema(
         title = "Link role",
-        description = "When `allowLinkSharing` is true, grant LINK_VIEWER or LINK_EDITOR instead of `role`."
+        description = "LINK_VIEWER or LINK_EDITOR. Used only when every member is `allUsers` or `domain:`. Requires `allowLinkSharing`. Do not set this when granting `role` to `user:`, `group:`, or `serviceAccount:` members."
     )
     @PluginProperty(group = "source")
     private Property<LinkRole> linkRole;
@@ -89,7 +89,7 @@ public class Add extends AbstractDataStudioTask implements RunnableTask<Add.Outp
 
     @Schema(
         title = "Members",
-        description = "Members to add. Prefix each entry with `user:`, `group:`, or `serviceAccount:`. `domain:` and `allUsers` require `allowLinkSharing`."
+        description = "Members to add. `user:`, `group:`, and `serviceAccount:` take `role`. `allUsers` takes `linkRole`. `domain:` takes `role` or `linkRole`. `allUsers` and `domain:` require `allowLinkSharing`."
     )
     @PluginProperty(group = "source")
     @NotNull
@@ -102,12 +102,8 @@ public class Add extends AbstractDataStudioTask implements RunnableTask<Add.Outp
         AssetRole renderedRole = runContext.render(this.role).as(AssetRole.class).orElse(AssetRole.VIEWER);
         LinkRole renderedLinkRole = runContext.render(this.linkRole).as(LinkRole.class).orElse(null);
         boolean allowLinkSharing = runContext.render(this.allowLinkSharing).as(Boolean.class).orElse(false);
-        if (renderedLinkRole != null && !allowLinkSharing) {
-            throw new IllegalArgumentException("linkRole requires allowLinkSharing: true");
-        }
-        String role = renderedLinkRole != null ? renderedLinkRole.name() : renderedRole.name();
         List<String> members = runContext.render(this.members).asList(String.class);
-        Members.validateGrant(members, allowLinkSharing);
+        String role = Members.grantRole(renderedRole, renderedLinkRole, allowLinkSharing, members);
 
         Permissions permissions;
         try (DataStudioClient client = this.open(runContext, true)) {

@@ -368,6 +368,48 @@ class DataStudioTest {
     }
 
     @Test
+    void linkRoleIsRejectedForNamedMembersAndViewerIsRejectedForAllUsers() throws Exception {
+        Add namedWithLinkRole = Add.builder()
+            .id(taskId())
+            .type(Add.class.getName())
+            .accessToken(Property.ofValue("token-1"))
+            .assetName(Property.ofValue("report-1"))
+            .allowLinkSharing(Property.ofValue(true))
+            .linkRole(Property.ofValue(LinkRole.LINK_VIEWER))
+            .members(Property.ofValue(List.of("user:ada@acme.com")))
+            .build();
+        assertThrows(IllegalArgumentException.class, () -> namedWithLinkRole.run(TestsUtils.mockRunContext(this.runContextFactory, namedWithLinkRole, Map.of())));
+
+        Add allUsersAsViewer = Add.builder()
+            .id(taskId())
+            .type(Add.class.getName())
+            .accessToken(Property.ofValue("token-1"))
+            .assetName(Property.ofValue("report-1"))
+            .allowLinkSharing(Property.ofValue(true))
+            .role(Property.ofValue(AssetRole.VIEWER))
+            .members(Property.ofValue(List.of("allUsers")))
+            .build();
+        assertThrows(IllegalArgumentException.class, () -> allUsersAsViewer.run(TestsUtils.mockRunContext(this.runContextFactory, allUsersAsViewer, Map.of())));
+
+        try (FakeApi api = FakeApi.start()) {
+            Add domainAsViewer = Add.builder()
+                .id(taskId())
+                .type(Add.class.getName())
+                .accessToken(Property.ofValue("token-1"))
+                .baseUrl(Property.ofValue(api.baseUrl()))
+                .assetName(Property.ofValue("report-1"))
+                .allowLinkSharing(Property.ofValue(true))
+                .role(Property.ofValue(AssetRole.VIEWER))
+                .members(Property.ofValue(List.of("domain:acme.com", "user:ada@acme.com")))
+                .build();
+            domainAsViewer.run(TestsUtils.mockRunContext(this.runContextFactory, domainAsViewer, Map.of()));
+            assertTrue(api.lastBody.contains("\"role\":\"VIEWER\""));
+            assertTrue(api.lastBody.contains("domain:acme.com"));
+            assertFalse(api.lastBody.contains("LINK_"));
+        }
+    }
+
+    @Test
     void removedAssetDoesNotFireAndANewOneDoes() throws Exception {
         try (FakeApi api = FakeApi.start()) {
             api.searchBody = """
@@ -400,6 +442,32 @@ class DataStudioTest {
             Trigger trigger = trigger(api);
             var context = TestsUtils.mockTrigger(this.runContextFactory, trigger);
             assertThrows(IOException.class, () -> trigger.evaluate(context.getKey(), context.getValue()));
+
+            api.endlessPages = false;
+            api.searchBody = """
+                {"assets":[{"name":"report-1","title":"Sales","assetType":"REPORT","updateTime":"2026-04-01T00:00:00Z"}]}
+                """;
+            var again = TestsUtils.mockTrigger(this.runContextFactory, trigger);
+            assertTrue(trigger.evaluate(again.getKey(), again.getValue()).isEmpty());
+        }
+    }
+
+    @Test
+    void triggerMaxPagesCanBeRaisedAndStillFailsClosed() throws Exception {
+        try (FakeApi api = FakeApi.start()) {
+            api.endlessPages = true;
+            Trigger trigger = Trigger.builder()
+                .id("watch")
+                .type(Trigger.class.getName())
+                .accessToken(Property.ofValue("token-1"))
+                .baseUrl(Property.ofValue(api.baseUrl()))
+                .assetTypes(Property.ofValue(List.of("REPORT")))
+                .maxPages(Property.ofValue(1))
+                .interval(Duration.ofMinutes(5))
+                .build();
+            var context = TestsUtils.mockTrigger(this.runContextFactory, trigger);
+            IOException error = assertThrows(IOException.class, () -> trigger.evaluate(context.getKey(), context.getValue()));
+            assertTrue(error.getMessage().contains("exceeded 1 pages"));
 
             api.endlessPages = false;
             api.searchBody = """
