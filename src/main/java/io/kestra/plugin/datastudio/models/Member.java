@@ -14,9 +14,19 @@ import lombok.Setter;
 @AllArgsConstructor
 public class Member {
 
-    @Schema(title = "Role", description = "OWNER, EDITOR, or VIEWER.")
+    @Schema(
+        title = "Role",
+        description = """
+            OWNER, EDITOR, VIEWER, LINK_EDITOR, or LINK_VIEWER.
+            """
+    )
     private String role;
 
-    @Schema(title = "Member", description = "Member identifier such as `user:ada@acme.com` or `group:analysts@acme.com`.")
+    @Schema(
+        title = "Member",
+        description = """
+            Member identifier such as `user:ada@acme.com` or `group:analysts@acme.com`.
+            """
+    )
     private String member;
 }

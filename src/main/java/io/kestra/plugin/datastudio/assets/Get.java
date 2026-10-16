@@ -29,7 +29,9 @@ import lombok.experimental.SuperBuilder;
 @NoArgsConstructor
 @Schema(
     title = "Get a Data Studio asset",
-    description = "Load metadata for one report or data source. The API has no get-by-id method, so this task walks search pages for each asset type and stops at the first name match. On a large organization that can be many pages. Live assets are searched first. `includeTrashed` then searches the trash, because the API returns only trashed assets when that flag is true. The task fails if a scan exceeds `maxPages` without a match."
+    description = """
+        Load metadata for one report or data source. The API has no get-by-id method, so this task walks search pages for each asset type and stops at the first name match. On a large organization that can be many pages. Live assets are searched first. `includeTrashed` then searches the trash, because the API returns only trashed assets when that flag is true. The task fails if a scan exceeds `maxPages` without a match.
+        """
 )
 @Plugin(
     examples = {
@@ -59,15 +61,19 @@ public class Get extends AbstractDataStudioTask implements RunnableTask<Get.Outp
 
     @Schema(
         title = "Asset name",
-        description = "The Data Studio asset ID returned by Search as `name`."
+        description = """
+            The Data Studio asset ID returned by Search as `name`.
+            """
     )
-    @PluginProperty(group = "source")
+    @PluginProperty(group = "main")
     @NotNull
     private Property<String> assetName;
 
     @Schema(
         title = "Asset types",
-        description = "Types to search while looking up the asset. Defaults to REPORT and DATA_SOURCE. UNKNOWN is output-only and is rejected here."
+        description = """
+            Types to search while looking up the asset. Defaults to REPORT and DATA_SOURCE. UNKNOWN is output-only and is rejected here.
+            """
     )
     @PluginProperty(group = "source")
     @Builder.Default
@@ -75,7 +81,9 @@ public class Get extends AbstractDataStudioTask implements RunnableTask<Get.Outp
 
     @Schema(
         title = "Include trashed assets",
-        description = "When true, search live assets first and then the trash. The API's `includeTrashed=true` returns only trashed assets, so a trashed asset is not visible in the live scan. When false, trashed assets are not found."
+        description = """
+            When true, search live assets first and then the trash. The API's `includeTrashed=true` returns only trashed assets, so a trashed asset is not visible in the live scan. When false, trashed assets are not found.
+            """
     )
     @PluginProperty(group = "source")
     @NotNull
@@ -84,7 +92,9 @@ public class Get extends AbstractDataStudioTask implements RunnableTask<Get.Outp
 
     @Schema(
         title = "Maximum pages",
-        description = "Fail when one asset type needs more pages than this before the name matches. Default 50."
+        description = """
+            Fail when one asset type needs more pages than this before the name matches. Default 50.
+            """
     )
     @PluginProperty(group = "advanced")
     @NotNull
@@ -106,14 +116,14 @@ public class Get extends AbstractDataStudioTask implements RunnableTask<Get.Outp
             throw new IllegalArgumentException("maxPages must be at least 1");
         }
 
-        try (DataStudioClient client = this.open(runContext)) {
-            Asset live = find(client, rAssetTypes, rAssetName, false, rMaxPages);
+        try (var client = this.open(runContext)) {
+            var live = find(client, rAssetTypes, rAssetName, false, rMaxPages);
             if (live != null) {
                 runContext.logger().info("Found Data Studio asset {}", rAssetName);
                 return Output.builder().asset(live).build();
             }
             if (rIncludeTrashed) {
-                Asset trashed = find(client, rAssetTypes, rAssetName, true, rMaxPages);
+                var trashed = find(client, rAssetTypes, rAssetName, true, rMaxPages);
                 if (trashed != null) {
                     runContext.logger().info("Found trashed Data Studio asset {}", rAssetName);
                     return Output.builder().asset(trashed).build();
@@ -124,8 +134,8 @@ public class Get extends AbstractDataStudioTask implements RunnableTask<Get.Outp
     }
 
     private static Asset find(DataStudioClient client, List<AssetType> assetTypes, String assetName, boolean trashed, int maxPages) throws Exception {
-        for (AssetType assetType : assetTypes) {
-            Asset asset = client.findByName(assetType.name(), assetName, trashed, maxPages);
+        for (var assetType : assetTypes) {
+            var asset = client.findByName(assetType.name(), assetName, trashed, maxPages);
             if (asset != null) {
                 return asset;
             }

@@ -18,7 +18,12 @@ import lombok.Setter;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class Asset {
 
-    @Schema(title = "Asset name", description = "The Data Studio asset ID.")
+    @Schema(
+        title = "Asset name",
+        description = """
+            The Data Studio asset ID.
+            """
+    )
     private String name;
 
     @Schema(title = "Title")
@@ -39,9 +44,19 @@ public class Asset {
     @Schema(title = "Update time")
     private Instant updateTime;
 
-    @Schema(title = "Asset type", description = "REPORT or DATA_SOURCE. An unexpected API value is UNKNOWN, so one asset does not fail the whole response.")
+    @Schema(
+        title = "Asset type",
+        description = """
+            REPORT or DATA_SOURCE. An unexpected API value is UNKNOWN, so one asset does not fail the whole response.
+            """
+    )
     private AssetType assetType;
 
-    @Schema(title = "Trashed", description = "True when the asset is in the trash.")
+    @Schema(
+        title = "Trashed",
+        description = """
+            True when the asset is in the trash.
+            """
+    )
     private Boolean trashed;
 }

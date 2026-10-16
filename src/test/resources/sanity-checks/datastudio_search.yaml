@@ -1,0 +1,15 @@
+id: datastudio_search
+namespace: sanity.datastudio
+
+tasks:
+  - id: search
+    type: io.kestra.plugin.datastudio.assets.Search
+    accessToken: sanity-token
+    baseUrl: http://127.0.0.1:18089/v1
+    assetTypes:
+      - REPORT
+    fetchType: FETCH
+
+  - id: log
+    type: io.kestra.plugin.core.log.Log
+    message: "Found {{ outputs.search.size }} assets"

@@ -1,7 +1,13 @@
 package io.kestra.plugin.datastudio.permissions;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
+
+import io.kestra.plugin.datastudio.models.Member;
+import io.kestra.plugin.datastudio.models.Permissions;
 
 final class Members {
     private static final Pattern NAMED = Pattern.compile("^(user|group|serviceAccount):\\S+$");
@@ -10,19 +16,15 @@ final class Members {
     private Members() {
     }
 
-    /**
-     * The Data Studio types page assigns {@code user:}, {@code group:}, {@code domain:}, and
-     * {@code serviceAccount:} to VIEWER and EDITOR, and assigns {@code allUsers} and {@code domain:}
-     * to LINK_VIEWER and LINK_EDITOR. One addMembers call has a single role, so those sets cannot be mixed.
-     */
+    // API: one role per addMembers call; LINK_* roles only for allUsers and domain: members.
     static String grantRole(AssetRole role, LinkRole linkRole, boolean allowLinkSharing, List<String> members) {
         if (members == null || members.isEmpty()) {
             throw new IllegalArgumentException("members must not be empty");
         }
-        boolean named = false;
-        boolean allUsers = false;
-        boolean domain = false;
-        for (String member : members) {
+        var named = false;
+        var allUsers = false;
+        var domain = false;
+        for (var member : members) {
             if (member != null && NAMED.matcher(member).matches()) {
                 named = true;
                 continue;
@@ -35,7 +37,7 @@ final class Members {
                 domain = true;
                 continue;
             }
-            String expected = allowLinkSharing
+            var expected = allowLinkSharing
                 ? "Grant members must use user:, group:, serviceAccount:, domain:, or allUsers. Got: "
                 : "Grant members must use user:, group:, or serviceAccount:. Got: ";
             throw new IllegalArgumentException(expected + member);
@@ -62,28 +64,42 @@ final class Members {
     }
 
     static void validateRevoke(List<String> members) {
-        validate(members, true, true);
-    }
-
-    private static void validate(List<String> members, boolean allowLinkSharing, boolean revoke) {
         if (members == null || members.isEmpty()) {
             throw new IllegalArgumentException("members must not be empty");
         }
-        for (String member : members) {
-            if (member != null && NAMED.matcher(member).matches()) {
-                continue;
+        for (var member : members) {
+            var valid = member != null
+                && (NAMED.matcher(member).matches() || "allUsers".equals(member) || DOMAIN.matcher(member).matches());
+            if (!valid) {
+                throw new IllegalArgumentException("Revoke members must use user:, group:, serviceAccount:, domain:, or allUsers. Got: " + member);
             }
-            boolean link = member != null && ("allUsers".equals(member) || DOMAIN.matcher(member).matches());
-            if (link && allowLinkSharing) {
-                continue;
-            }
-            if (link) {
-                throw new IllegalArgumentException("Sharing with " + member + " requires allowLinkSharing: true");
-            }
-            String expected = revoke
-                ? "Revoke members must use user:, group:, serviceAccount:, domain:, or allUsers. Got: "
-                : "Grant members must use user:, group:, or serviceAccount:. Got: ";
-            throw new IllegalArgumentException(expected + member);
         }
+    }
+
+    static List<Member> flatten(Permissions permissions) {
+        var members = new ArrayList<Member>();
+        if (permissions == null || permissions.getPermissions() == null) {
+            return members;
+        }
+        permissions.getPermissions().forEach((role, value) -> {
+            if (value == null || value.getMembers() == null) {
+                return;
+            }
+            for (var member : value.getMembers()) {
+                members.add(Member.builder().role(role).member(member).build());
+            }
+        });
+        return members;
+    }
+
+    static Map<String, List<String>> roleMap(Permissions permissions) {
+        if (permissions == null || permissions.getPermissions() == null) {
+            return Map.of();
+        }
+        return permissions.getPermissions().entrySet().stream()
+            .collect(Collectors.toMap(
+                Map.Entry::getKey,
+                entry -> entry.getValue() == null || entry.getValue().getMembers() == null ? List.of() : entry.getValue().getMembers()
+            ));
     }
 }

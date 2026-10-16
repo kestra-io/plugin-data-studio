@@ -50,7 +50,9 @@ import lombok.experimental.SuperBuilder;
 @NoArgsConstructor
 @Schema(
     title = "Watch Data Studio assets",
-    description = "Poll reports or data sources and start an execution when an asset is created or updated after the watermark stored in the namespace KV store. The watermark key includes the flow id and the trigger id, so two flows in the same namespace do not share state. The first poll records the current assets and does not start an execution. A search that exceeds `maxPages` (default 50) fails and does not move the watermark."
+    description = """
+        Poll reports or data sources and start an execution when an asset is created or updated after the watermark stored in the namespace KV store. The watermark key includes the flow id and the trigger id, so two flows in the same namespace do not share state. The first poll records the current assets and does not start an execution. A search that exceeds `maxPages` (default 50) fails and does not move the watermark.
+        """
 )
 @Plugin(
     examples = {
@@ -81,7 +83,9 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
 
     @Schema(
         title = "Service account JSON",
-        description = "Google service account key JSON. The trigger requests `https://www.googleapis.com/auth/datastudio.readonly` through domain-wide delegation in a Google Workspace or Cloud Identity organization. Use this or `accessToken`."
+        description = """
+            Google service account key JSON. The trigger requests `https://www.googleapis.com/auth/datastudio.readonly` through domain-wide delegation in a Google Workspace or Cloud Identity organization. Use this or `accessToken`.
+            """
     )
     @PluginProperty(secret = true, group = "connection")
     @ToString.Exclude
@@ -89,7 +93,9 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
 
     @Schema(
         title = "Access token",
-        description = "OAuth access token with the `datastudio.readonly` scope. When set, the service account exchange is skipped."
+        description = """
+            OAuth access token with the `datastudio.readonly` scope. When set, the service account exchange is skipped.
+            """
     )
     @PluginProperty(secret = true, group = "connection")
     @ToString.Exclude
@@ -97,14 +103,18 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
 
     @Schema(
         title = "Delegated user",
-        description = "Workspace user email the service account impersonates. Required for domain-wide delegation. Ignored when `accessToken` is set."
+        description = """
+            Workspace user email the service account impersonates. Required for domain-wide delegation. Ignored when `accessToken` is set.
+            """
     )
     @PluginProperty(group = "connection")
     private Property<String> subject;
 
     @Schema(
         title = "API base URL",
-        description = "Data Studio API root. Defaults to `https://datastudio.googleapis.com/v1`."
+        description = """
+            Data Studio API root. Defaults to `https://datastudio.googleapis.com/v1`.
+            """
     )
     @PluginProperty(group = "connection")
     @NotNull
@@ -113,7 +123,9 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
 
     @Schema(
         title = "Token URI",
-        description = "OAuth token endpoint used to exchange a service account JWT."
+        description = """
+            OAuth token endpoint used to exchange a service account JWT.
+            """
     )
     @PluginProperty(group = "connection")
     @NotNull
@@ -122,7 +134,9 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
 
     @Schema(
         title = "Asset types",
-        description = "Asset types to watch. Each value is queried separately. Allowed values are REPORT and DATA_SOURCE. UNKNOWN is output-only and is rejected here."
+        description = """
+            Asset types to watch. Each value is queried separately. Allowed values are REPORT and DATA_SOURCE. UNKNOWN is output-only and is rejected here.
+            """
     )
     @PluginProperty(group = "source")
     @NotNull
@@ -131,7 +145,9 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
 
     @Schema(
         title = "Maximum pages",
-        description = "Fail when one asset type needs more pages than this. Default 50. The watermark is not moved, and the partial asset list is discarded."
+        description = """
+            Fail when one asset type needs more pages than this. Default 50. The watermark is not moved, and the partial asset list is discarded.
+            """
     )
     @PluginProperty(group = "advanced")
     @NotNull
@@ -140,7 +156,9 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
 
     @Schema(
         title = "Maximum assets in the output",
-        description = "Cap on `assets` in the trigger variables. `size` stays the full number of changed assets. Default 100."
+        description = """
+            Cap on `assets` in the trigger variables. `size` stays the full number of changed assets. Default 100.
+            """
     )
     @PluginProperty(group = "advanced")
     @NotNull
@@ -149,7 +167,9 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
 
     @Schema(
         title = "Interval",
-        description = "How often to poll Data Studio. Minimum practical value is PT30S."
+        description = """
+            How often to poll Data Studio. Minimum practical value is PT30S.
+            """
     )
     @PluginProperty(group = "execution")
     @NotNull
@@ -158,7 +178,7 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
 
     @Override
     public Optional<Execution> evaluate(ConditionContext conditionContext, TriggerContext context) throws Exception {
-        RunContext runContext = conditionContext.getRunContext();
+        var runContext = conditionContext.getRunContext();
         var rAssetTypes = runContext.render(this.assetTypes).asList(AssetType.class);
         AssetType.rejectUnknownRequest(rAssetTypes);
         var rMaxPages = runContext.render(this.maxPages).as(Integer.class).orElse(DataStudioClient.DEFAULT_MAX_PAGES);
@@ -166,25 +186,24 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
         if (rMaxPages < 1 || rMaxAssetsInOutput < 1) {
             throw new IllegalArgumentException("maxPages and maxAssetsInOutput must be at least 1");
         }
-        List<Asset> assets = new ArrayList<>();
-        try (DataStudioClient client = DataStudioClient.open(runContext, this, false)) {
-            for (AssetType assetType : rAssetTypes) {
+        var assets = new ArrayList<Asset>();
+        try (var client = DataStudioClient.open(runContext, this, false)) {
+            for (var assetType : rAssetTypes) {
                 assets.addAll(client.searchAll(assetType.name(), null, null, false, null, null, rMaxPages));
             }
         }
 
-        String namespace = conditionContext.getFlow().getNamespace();
-        KVStore kv = runContext.namespaceKv(namespace);
-        String key = stateKey(context);
-        Optional<Watermark> previous = read(kv, key);
-        Watermark current = Watermark.from(assets);
+        var kv = runContext.namespaceKv(context.getNamespace());
+        var key = stateKey(context);
+        var previous = read(kv, key);
+        var current = Watermark.from(assets);
         if (previous.isEmpty()) {
             write(kv, key, current);
             runContext.logger().info("Stored the initial Data Studio watermark for {} assets", assets.size());
             return Optional.empty();
         }
 
-        List<Asset> changed = assets.stream()
+        var changed = assets.stream()
             .filter(asset -> previous.get().isChanged(asset))
             .toList();
         if (changed.isEmpty()) {
@@ -192,9 +211,9 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
             return Optional.empty();
         }
 
-        Asset first = changed.getFirst();
+        var first = changed.getFirst();
         runContext.logger().info("Data Studio asset {} changed", first.getName());
-        Output output = Output.builder()
+        var output = Output.builder()
             .title(first.getTitle())
             .name(first.getName())
             .assetType(first.getAssetType())
@@ -202,19 +221,19 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
             .size(changed.size())
             .assets(changed.size() <= rMaxAssetsInOutput ? changed : changed.subList(0, rMaxAssetsInOutput))
             .build();
-        Execution execution = TriggerService.generateExecution(this, conditionContext, context, output);
+        var execution = TriggerService.generateExecution(this, conditionContext, context, output);
         write(kv, key, current);
         return Optional.of(execution);
     }
 
     private String stateKey(TriggerContext context) {
-        String triggerId = context.getTriggerId() != null ? context.getTriggerId() : this.getId();
+        var triggerId = context.getTriggerId() != null ? context.getTriggerId() : this.getId();
         return "datastudio_assets_" + segment(context.getFlowId()) + "_" + segment(triggerId);
     }
 
     private static String segment(String value) {
-        String raw = value == null || value.isBlank() ? "unknown" : value;
-        String sanitized = raw.replaceAll("[^a-zA-Z0-9._-]", "_");
+        var raw = value == null || value.isBlank() ? "unknown" : value;
+        var sanitized = raw.replaceAll("[^a-zA-Z0-9._-]", "_");
         if (sanitized.isEmpty() || !Character.isLetterOrDigit(sanitized.charAt(0))) {
             sanitized = "t" + sanitized;
         }
@@ -222,11 +241,11 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
     }
 
     private Optional<Watermark> read(KVStore kv, String key) throws Exception {
-        Optional<KVValue> value = kv.getValue(key);
+        var value = kv.getValue(key);
         if (value.isEmpty() || value.get().value() == null) {
             return Optional.empty();
         }
-        Object stored = value.get().value();
+        var stored = value.get().value();
         if (stored instanceof String json) {
             return Optional.of(JacksonMapper.ofJson().readValue(json, Watermark.class));
         }
@@ -237,7 +256,7 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
     }
 
     private void write(KVStore kv, String key, Watermark watermark) throws Exception {
-        String json = JacksonMapper.ofJson().writeValueAsString(watermark);
+        var json = JacksonMapper.ofJson().writeValueAsString(watermark);
         kv.put(key, new KVValueAndMetadata(new KVMetadata("Data Studio asset watermark", (Duration) null), json));
     }
 
@@ -261,7 +280,9 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
 
         @Schema(
             title = "Changed assets",
-            description = "At most `maxAssetsInOutput` assets. `size` is the full count."
+            description = """
+                At most `maxAssetsInOutput` assets. `size` is the full count.
+                """
         )
         private final List<Asset> assets;
     }
@@ -275,13 +296,13 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
         private Set<String> names = new LinkedHashSet<>();
 
         static Watermark from(List<Asset> assets) {
-            Watermark watermark = new Watermark();
+            var watermark = new Watermark();
             Instant max = null;
-            for (Asset asset : assets) {
+            for (var asset : assets) {
                 if (asset.getName() != null) {
                     watermark.names.add(asset.getName());
                 }
-                Instant updated = asset.getUpdateTime();
+                var updated = asset.getUpdateTime();
                 if (updated != null && (max == null || updated.isAfter(max))) {
                     max = updated;
                 }
@@ -294,7 +315,7 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
             if (asset.getName() == null || this.names == null || !this.names.contains(asset.getName())) {
                 return true;
             }
-            Instant updated = asset.getUpdateTime();
+            var updated = asset.getUpdateTime();
             return updated != null && (this.updateTime == null || updated.isAfter(this.updateTime));
         }
     }

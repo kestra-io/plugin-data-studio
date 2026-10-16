@@ -22,7 +22,9 @@ public abstract class AbstractDataStudioTask extends Task implements DataStudioC
 
     @Schema(
         title = "Service account JSON",
-        description = "Google service account key JSON. Read tasks request `https://www.googleapis.com/auth/datastudio.readonly`. Add and Revoke request `https://www.googleapis.com/auth/datastudio`. Grant the scope through domain-wide delegation in a Google Workspace or Cloud Identity organization. Use this or `accessToken`."
+        description = """
+            Google service account key JSON. Read tasks request `https://www.googleapis.com/auth/datastudio.readonly`. Add and Revoke request `https://www.googleapis.com/auth/datastudio`. Grant the scope through domain-wide delegation in a Google Workspace or Cloud Identity organization. Use this or `accessToken`.
+            """
     )
     @PluginProperty(secret = true, group = "connection")
     @ToString.Exclude
@@ -30,7 +32,9 @@ public abstract class AbstractDataStudioTask extends Task implements DataStudioC
 
     @Schema(
         title = "Access token",
-        description = "OAuth access token. When set, the service account exchange is skipped, so the token must already include `datastudio.readonly` for read tasks or `datastudio` for Add and Revoke."
+        description = """
+            OAuth access token. When set, the service account exchange is skipped, so the token must already include `datastudio.readonly` for read tasks or `datastudio` for Add and Revoke.
+            """
     )
     @PluginProperty(secret = true, group = "connection")
     @ToString.Exclude
@@ -38,14 +42,18 @@ public abstract class AbstractDataStudioTask extends Task implements DataStudioC
 
     @Schema(
         title = "Delegated user",
-        description = "Workspace user email the service account impersonates. Required for domain-wide delegation. Ignored when `accessToken` is set."
+        description = """
+            Workspace user email the service account impersonates. Required for domain-wide delegation. Ignored when `accessToken` is set.
+            """
     )
     @PluginProperty(group = "connection")
     protected Property<String> subject;
 
     @Schema(
         title = "API base URL",
-        description = "Data Studio API root. Defaults to `https://datastudio.googleapis.com/v1`."
+        description = """
+            Data Studio API root. Defaults to `https://datastudio.googleapis.com/v1`.
+            """
     )
     @PluginProperty(group = "connection")
     @NotNull
@@ -54,16 +62,15 @@ public abstract class AbstractDataStudioTask extends Task implements DataStudioC
 
     @Schema(
         title = "Token URI",
-        description = "OAuth token endpoint used to exchange a service account JWT."
+        description = """
+            OAuth token endpoint used to exchange a service account JWT.
+            """
     )
     @PluginProperty(group = "connection")
     @NotNull
     @Builder.Default
     protected Property<String> tokenUri = Property.ofValue("https://oauth2.googleapis.com/token");
 
-    /**
-     * Opens a client for this run. Callers must close it before returning.
-     */
     protected DataStudioClient open(RunContext runContext) throws Exception {
         return DataStudioClient.open(runContext, this, false);
     }

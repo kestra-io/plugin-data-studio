@@ -11,6 +11,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
+import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
@@ -24,14 +25,15 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 
 import com.sun.net.httpserver.HttpServer;
 
 import io.kestra.core.junit.annotations.KestraTest;
+import io.kestra.core.models.conditions.ConditionContext;
 import io.kestra.core.models.flows.Flow;
 import io.kestra.core.models.property.Property;
 import io.kestra.core.models.tasks.common.FetchType;
-import io.kestra.core.models.conditions.ConditionContext;
 import io.kestra.core.models.triggers.TriggerContext;
 import io.kestra.core.runners.RunContext;
 import io.kestra.core.runners.RunContextFactory;
@@ -41,11 +43,11 @@ import io.kestra.core.utils.TestsUtils;
 import io.kestra.plugin.datastudio.assets.Get;
 import io.kestra.plugin.datastudio.assets.Search;
 import io.kestra.plugin.datastudio.assets.Trigger;
+import io.kestra.plugin.datastudio.models.AssetOrder;
+import io.kestra.plugin.datastudio.models.AssetType;
 import io.kestra.plugin.datastudio.permissions.Add;
 import io.kestra.plugin.datastudio.permissions.AssetRole;
 import io.kestra.plugin.datastudio.permissions.LinkRole;
-import io.kestra.plugin.datastudio.models.AssetOrder;
-import io.kestra.plugin.datastudio.models.AssetType;
 import io.kestra.plugin.datastudio.permissions.Revoke;
 
 import jakarta.inject.Inject;
@@ -60,11 +62,11 @@ class DataStudioTest {
 
     @Test
     void searchStoresIon() throws Exception {
-        try (FakeApi api = FakeApi.start()) {
+        try (var api = FakeApi.start()) {
             api.searchBody = """
                 {"assets":[{"name":"report-1","title":"Sales","owner":"ada@acme.com","assetType":"REPORT","updateTime":"2026-04-01T00:00:00Z"}],"nextPageToken":""}
                 """;
-            Search search = Search.builder()
+            var search = Search.builder()
                 .id(taskId())
                 .type(Search.class.getName())
                 .accessToken(Property.ofValue("token-1"))
@@ -73,15 +75,15 @@ class DataStudioTest {
                 .owner(Property.ofValue("ada@acme.com"))
                 .fetchType(Property.ofValue(FetchType.STORE))
                 .build();
-            RunContext runContext = TestsUtils.mockRunContext(this.runContextFactory, search, Map.of());
-            Search.Output stored = search.run(runContext);
+            var runContext = TestsUtils.mockRunContext(this.runContextFactory, search, Map.of());
+            var stored = search.run(runContext);
 
             assertEquals(1, stored.getSize());
             assertNotNull(stored.getUri());
             assertTrue(api.lastQuery.contains("assetTypes=REPORT"));
             assertTrue(api.lastQuery.contains("owner=ada%40acme.com"));
-            List<Object> rows = new ArrayList<>();
-            try (InputStream input = runContext.storage().getFile(stored.getUri())) {
+            var rows = new ArrayList<Object>();
+            try (var input = runContext.storage().getFile(stored.getUri())) {
                 FileSerde.read(input, rows::add);
             }
             assertEquals(1, rows.size());
@@ -90,11 +92,11 @@ class DataStudioTest {
 
     @Test
     void getFindsAsset() throws Exception {
-        try (FakeApi api = FakeApi.start()) {
+        try (var api = FakeApi.start()) {
             api.searchBody = """
                 {"assets":[{"name":"report-1","title":"Sales","owner":"ada@acme.com","assetType":"REPORT","updateTime":"2026-04-01T00:00:00Z"}],"nextPageToken":""}
                 """;
-            Get get = Get.builder()
+            var get = Get.builder()
                 .id(taskId())
                 .type(Get.class.getName())
                 .accessToken(Property.ofValue("token-1"))
@@ -102,7 +104,7 @@ class DataStudioTest {
                 .assetName(Property.ofValue("report-1"))
                 .assetTypes(Property.ofValue(List.of(AssetType.REPORT)))
                 .build();
-            Get.Output got = get.run(TestsUtils.mockRunContext(this.runContextFactory, get, Map.of()));
+            var got = get.run(TestsUtils.mockRunContext(this.runContextFactory, get, Map.of()));
             assertEquals("Sales", got.getAsset().getTitle());
             assertEquals(AssetType.REPORT, got.getAsset().getAssetType());
         }
@@ -110,7 +112,7 @@ class DataStudioTest {
 
     @Test
     void permissionsGetListsMembers() throws Exception {
-        try (FakeApi api = FakeApi.start()) {
+        try (var api = FakeApi.start()) {
             api.permissionsBody = """
                 {"permissions":{"VIEWER":{"members":["group:analysts@acme.com"]},"OWNER":{"members":["user:ada@acme.com"]}}}
                 """;
@@ -129,11 +131,11 @@ class DataStudioTest {
 
     @Test
     void addGrantsRole() throws Exception {
-        try (FakeApi api = FakeApi.start()) {
+        try (var api = FakeApi.start()) {
             api.permissionsBody = """
                 {"permissions":{"VIEWER":{"members":["group:analysts@acme.com"]},"OWNER":{"members":["user:ada@acme.com"]}}}
                 """;
-            Add add = Add.builder()
+            var add = Add.builder()
                 .id(taskId())
                 .type(Add.class.getName())
                 .accessToken(Property.ofValue("token-1"))
@@ -142,7 +144,7 @@ class DataStudioTest {
                 .role(Property.ofValue(AssetRole.VIEWER))
                 .members(Property.ofValue(List.of("group:analysts@acme.com")))
                 .build();
-            Add.Output added = add.run(TestsUtils.mockRunContext(this.runContextFactory, add, Map.of()));
+            var added = add.run(TestsUtils.mockRunContext(this.runContextFactory, add, Map.of()));
             assertEquals("POST", api.lastMethod);
             assertTrue(api.lastPath.contains("permissions:addMembers"));
             assertTrue(api.lastBody.contains("VIEWER"));
@@ -153,11 +155,11 @@ class DataStudioTest {
 
     @Test
     void revokeRemovesMember() throws Exception {
-        try (FakeApi api = FakeApi.start()) {
+        try (var api = FakeApi.start()) {
             api.permissionsBody = """
                 {"permissions":{"VIEWER":{"members":["group:analysts@acme.com"]},"OWNER":{"members":["user:ada@acme.com"]}}}
                 """;
-            Revoke revoke = Revoke.builder()
+            var revoke = Revoke.builder()
                 .id(taskId())
                 .type(Revoke.class.getName())
                 .accessToken(Property.ofValue("token-1"))
@@ -165,7 +167,7 @@ class DataStudioTest {
                 .assetName(Property.ofValue("report-1"))
                 .members(Property.ofValue(List.of("user:former.analyst@acme.com")))
                 .build();
-            Revoke.Output revoked = revoke.run(TestsUtils.mockRunContext(this.runContextFactory, revoke, Map.of()));
+            var revoked = revoke.run(TestsUtils.mockRunContext(this.runContextFactory, revoke, Map.of()));
             assertTrue(api.lastPath.contains("permissions:revokeAllPermissions"));
             assertTrue(api.lastBody.contains("former.analyst@acme.com"));
             assertEquals(2, revoked.getSize());
@@ -174,14 +176,14 @@ class DataStudioTest {
 
     @Test
     void includeTrashedSearchesLiveAssetsBeforeTheTrash() throws Exception {
-        try (FakeApi api = FakeApi.start()) {
+        try (var api = FakeApi.start()) {
             api.searchBody = """
                 {"assets":[]}
                 """;
             api.trashedBody = """
                 {"assets":[{"name":"report-trash","title":"Old","assetType":"REPORT","updateTime":"2026-04-01T00:00:00Z"}]}
                 """;
-            Get hidden = Get.builder()
+            var hidden = Get.builder()
                 .id(taskId())
                 .type(Get.class.getName())
                 .accessToken(Property.ofValue("token-1"))
@@ -193,7 +195,7 @@ class DataStudioTest {
             assertThrows(IllegalArgumentException.class, () -> hidden.run(TestsUtils.mockRunContext(this.runContextFactory, hidden, Map.of())));
             assertFalse(api.queries.stream().anyMatch(query -> query != null && query.contains("includeTrashed=true")));
 
-            Get found = Get.builder()
+            var found = Get.builder()
                 .id(taskId())
                 .type(Get.class.getName())
                 .accessToken(Property.ofValue("token-1"))
@@ -202,7 +204,7 @@ class DataStudioTest {
                 .assetTypes(Property.ofExpression("{{ inputs.types }}"))
                 .includeTrashed(Property.ofValue(true))
                 .build();
-            Get.Output output = found.run(TestsUtils.mockRunContext(
+            var output = found.run(TestsUtils.mockRunContext(
                 this.runContextFactory,
                 found,
                 Map.of("asset_id", "report-trash", "types", List.of("REPORT"))
@@ -214,7 +216,7 @@ class DataStudioTest {
 
     @Test
     void grantErrorListsLinkMembersWhenSharingIsAllowed() {
-        Add add = Add.builder()
+        var add = Add.builder()
             .id(taskId())
             .type(Add.class.getName())
             .accessToken(Property.ofValue("token-1"))
@@ -222,7 +224,7 @@ class DataStudioTest {
             .allowLinkSharing(Property.ofValue(true))
             .members(Property.ofValue(List.of("acme.com")))
             .build();
-        IllegalArgumentException error = assertThrows(
+        var error = assertThrows(
             IllegalArgumentException.class,
             () -> add.run(TestsUtils.mockRunContext(this.runContextFactory, add, Map.of()))
         );
@@ -232,7 +234,7 @@ class DataStudioTest {
 
     @Test
     void fetchOnePermissionsDoNotRepeatTheFullRoleMap() throws Exception {
-        try (FakeApi api = FakeApi.start()) {
+        try (var api = FakeApi.start()) {
             api.permissionsBody = """
                 {"permissions":{"VIEWER":{"members":["user:ada@acme.com","group:analysts@acme.com"]}}}
                 """;
@@ -252,11 +254,11 @@ class DataStudioTest {
 
     @Test
     void orderByUsesTheApiValue() throws Exception {
-        try (FakeApi api = FakeApi.start()) {
+        try (var api = FakeApi.start()) {
             api.searchBody = """
                 {"assets":[]}
                 """;
-            Search search = Search.builder()
+            var search = Search.builder()
                 .id(taskId())
                 .type(Search.class.getName())
                 .accessToken(Property.ofValue("token-1"))
@@ -272,27 +274,27 @@ class DataStudioTest {
 
     @Test
     void zeroPageBoundsAreRejected() {
-        Search noPages = Search.builder()
+        var noPages = Search.builder()
             .id(taskId())
             .type(Search.class.getName())
             .accessToken(Property.ofValue("token-1"))
             .assetTypes(Property.ofValue(List.of(AssetType.REPORT)))
             .maxPages(Property.ofValue(0))
             .build();
-        ConstraintViolationException pages = assertThrows(
+        var pages = assertThrows(
             ConstraintViolationException.class,
             () -> noPages.run(TestsUtils.mockRunContext(this.runContextFactory, noPages, Map.of()))
         );
         assertTrue(pages.getMessage().contains("maxPages"));
 
-        Search noSize = Search.builder()
+        var noSize = Search.builder()
             .id(taskId())
             .type(Search.class.getName())
             .accessToken(Property.ofValue("token-1"))
             .assetTypes(Property.ofValue(List.of(AssetType.REPORT)))
             .pageSize(Property.ofValue(0))
             .build();
-        ConstraintViolationException size = assertThrows(
+        var size = assertThrows(
             ConstraintViolationException.class,
             () -> noSize.run(TestsUtils.mockRunContext(this.runContextFactory, noSize, Map.of()))
         );
@@ -301,11 +303,11 @@ class DataStudioTest {
 
     @Test
     void fractionalUpdateTimeIsAnInstant() throws Exception {
-        try (FakeApi api = FakeApi.start()) {
+        try (var api = FakeApi.start()) {
             api.searchBody = """
                 {"assets":[{"name":"report-1","title":"Sales","assetType":"REPORT","updateTime":"2026-04-01T10:11:12.123456Z"}]}
                 """;
-            Get get = Get.builder()
+            var get = Get.builder()
                 .id(taskId())
                 .type(Get.class.getName())
                 .accessToken(Property.ofValue("token-1"))
@@ -313,18 +315,18 @@ class DataStudioTest {
                 .assetName(Property.ofValue("report-1"))
                 .assetTypes(Property.ofValue(List.of(AssetType.REPORT)))
                 .build();
-            Get.Output output = get.run(TestsUtils.mockRunContext(this.runContextFactory, get, Map.of()));
+            var output = get.run(TestsUtils.mockRunContext(this.runContextFactory, get, Map.of()));
             assertEquals(Instant.parse("2026-04-01T10:11:12.123456Z"), output.getAsset().getUpdateTime());
         }
     }
 
     @Test
     void unknownAssetTypeDoesNotFailTheSearch() throws Exception {
-        try (FakeApi api = FakeApi.start()) {
+        try (var api = FakeApi.start()) {
             api.searchBody = """
                 {"assets":[{"name":"report-1","title":"Sales","assetType":"ASSET_TYPE_UNSPECIFIED","updateTime":"2026-04-01T00:00:00Z"},{"name":"report-2","title":"Other","assetType":"report","updateTime":"2026-04-01T00:00:00Z"}]}
                 """;
-            Search search = Search.builder()
+            var search = Search.builder()
                 .id(taskId())
                 .type(Search.class.getName())
                 .accessToken(Property.ofValue("token-1"))
@@ -332,7 +334,7 @@ class DataStudioTest {
                 .assetTypes(Property.ofValue(List.of(AssetType.REPORT)))
                 .fetchType(Property.ofValue(FetchType.FETCH))
                 .build();
-            Search.Output output = search.run(TestsUtils.mockRunContext(this.runContextFactory, search, Map.of()));
+            var output = search.run(TestsUtils.mockRunContext(this.runContextFactory, search, Map.of()));
             assertEquals(2, output.getSize());
             assertEquals(AssetType.UNKNOWN, output.getAssets().get(0).getAssetType());
             assertEquals(AssetType.UNKNOWN, output.getAssets().get(1).getAssetType());
@@ -341,13 +343,13 @@ class DataStudioTest {
 
     @Test
     void unknownAssetTypeIsRejectedAsARequestValue() {
-        Search search = Search.builder()
+        var search = Search.builder()
             .id(taskId())
             .type(Search.class.getName())
             .accessToken(Property.ofValue("token-1"))
             .assetTypes(Property.ofValue(List.of(AssetType.UNKNOWN)))
             .build();
-        IllegalArgumentException error = assertThrows(
+        var error = assertThrows(
             IllegalArgumentException.class,
             () -> search.run(TestsUtils.mockRunContext(this.runContextFactory, search, Map.of()))
         );
@@ -356,11 +358,11 @@ class DataStudioTest {
 
     @Test
     void triggerCapsAssetsAndKeepsTheFullSize() throws Exception {
-        try (FakeApi api = FakeApi.start()) {
+        try (var api = FakeApi.start()) {
             api.searchBody = """
                 {"assets":[]}
                 """;
-            Trigger trigger = Trigger.builder()
+            var trigger = Trigger.builder()
                 .id("watch")
                 .type(Trigger.class.getName())
                 .accessToken(Property.ofValue("token-1"))
@@ -386,11 +388,11 @@ class DataStudioTest {
 
     @Test
     void triggerKeepsWatermarkInNamespaceKv() throws Exception {
-        try (FakeApi api = FakeApi.start()) {
+        try (var api = FakeApi.start()) {
             api.searchBody = """
                 {"assets":[{"name":"report-1","title":"Sales","assetType":"REPORT","updateTime":"2026-04-01T00:00:00Z"}]}
                 """;
-            Trigger trigger = Trigger.builder()
+            var trigger = Trigger.builder()
                 .id("watch")
                 .type(Trigger.class.getName())
                 .accessToken(Property.ofValue("token-1"))
@@ -417,27 +419,27 @@ class DataStudioTest {
 
     @Test
     void serviceAccountJwtIsSigned() throws Exception {
-        KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
+        var generator = KeyPairGenerator.getInstance("RSA");
         generator.initialize(2048);
-        KeyPair pair = generator.generateKeyPair();
-        String pem = "-----BEGIN PRIVATE KEY-----\n"
+        var pair = generator.generateKeyPair();
+        var pem = "-----BEGIN PRIVATE KEY-----\n"
             + Base64.getMimeEncoder(64, "\n".getBytes(StandardCharsets.UTF_8)).encodeToString(pair.getPrivate().getEncoded())
             + "\n-----END PRIVATE KEY-----\n";
-        String serviceAccount = JacksonMapper.ofJson().writeValueAsString(Map.of(
+        var serviceAccount = JacksonMapper.ofJson().writeValueAsString(Map.of(
             "client_email", "studio@project.iam.gserviceaccount.com",
             "private_key", pem
         ));
 
-        AtomicReference<String> assertion = new AtomicReference<>();
-        try (FakeApi api = FakeApi.start()) {
+        var assertion = new AtomicReference<String>();
+        try (var api = FakeApi.start()) {
             api.onToken = body -> {
-                for (String part : body.split("&")) {
+                for (var part : body.split("&")) {
                     if (part.startsWith("assertion=")) {
-                        assertion.set(java.net.URLDecoder.decode(part.substring("assertion=".length()), StandardCharsets.UTF_8));
+                        assertion.set(URLDecoder.decode(part.substring("assertion=".length()), StandardCharsets.UTF_8));
                     }
                 }
             };
-            Search search = Search.builder()
+            var search = Search.builder()
                 .id(taskId())
                 .type(Search.class.getName())
                 .serviceAccount(Property.ofValue(serviceAccount))
@@ -450,18 +452,18 @@ class DataStudioTest {
             api.searchBody = """
                 {"assets":[]}
                 """;
-            Search.Output output = search.run(TestsUtils.mockRunContext(this.runContextFactory, search, Map.of()));
+            var output = search.run(TestsUtils.mockRunContext(this.runContextFactory, search, Map.of()));
             assertEquals(0, output.getSize());
             assertEquals("Bearer ya29.test", api.lastAuthorization);
         }
 
-        String[] parts = assertion.get().split("\\.");
+        var parts = assertion.get().split("\\.");
         assertEquals(3, parts.length);
-        String payload = new String(Base64.getUrlDecoder().decode(parts[1]), StandardCharsets.UTF_8);
+        var payload = new String(Base64.getUrlDecoder().decode(parts[1]), StandardCharsets.UTF_8);
         assertTrue(payload.contains("studio@project.iam.gserviceaccount.com"));
         assertTrue(payload.contains("\"scope\":\"" + DataStudioClient.READ_SCOPE + "\""));
         assertTrue(payload.contains("analyst@acme.com"));
-        Signature signature = Signature.getInstance("SHA256withRSA");
+        var signature = Signature.getInstance("SHA256withRSA");
         signature.initVerify(pair.getPublic());
         signature.update((parts[0] + "." + parts[1]).getBytes(StandardCharsets.UTF_8));
         assertTrue(signature.verify(Base64.getUrlDecoder().decode(parts[2])));
@@ -469,17 +471,17 @@ class DataStudioTest {
 
     @Test
     void fetchAndFetchOneReturnRows() throws Exception {
-        try (FakeApi api = FakeApi.start()) {
+        try (var api = FakeApi.start()) {
             api.searchBody = """
                 {"assets":[{"name":"report-1","title":"Sales","assetType":"REPORT"},{"name":"report-2","title":"Costs","assetType":"REPORT"}]}
                 """;
-            Search fetch = search(api, FetchType.FETCH, null);
-            Search.Output fetched = fetch.run(TestsUtils.mockRunContext(this.runContextFactory, fetch, Map.of()));
+            var fetch = search(api, FetchType.FETCH, null);
+            var fetched = fetch.run(TestsUtils.mockRunContext(this.runContextFactory, fetch, Map.of()));
             assertEquals(2, fetched.getSize());
             assertEquals(2, fetched.getAssets().size());
 
-            Search one = search(api, FetchType.FETCH_ONE, null);
-            Search.Output first = one.run(TestsUtils.mockRunContext(this.runContextFactory, one, Map.of()));
+            var one = search(api, FetchType.FETCH_ONE, null);
+            var first = one.run(TestsUtils.mockRunContext(this.runContextFactory, one, Map.of()));
             assertEquals("Sales", first.getAsset().getTitle());
             assertEquals(null, first.getAssets());
         }
@@ -487,7 +489,7 @@ class DataStudioTest {
 
     @Test
     void searchReadsEveryPage() throws Exception {
-        try (FakeApi api = FakeApi.start()) {
+        try (var api = FakeApi.start()) {
             api.searchPages = List.of(
                 """
                 {"assets":[{"name":"report-1","title":"Sales","assetType":"REPORT"}],"nextPageToken":"page-2"}
@@ -496,8 +498,8 @@ class DataStudioTest {
                 {"assets":[{"name":"report-2","title":"Costs","assetType":"REPORT"}],"nextPageToken":""}
                 """
             );
-            Search task = search(api, FetchType.FETCH, null);
-            Search.Output output = task.run(TestsUtils.mockRunContext(this.runContextFactory, task, Map.of()));
+            var task = search(api, FetchType.FETCH, null);
+            var output = task.run(TestsUtils.mockRunContext(this.runContextFactory, task, Map.of()));
             assertEquals(2, output.getSize());
             assertTrue(api.queries.stream().anyMatch(query -> query != null && query.contains("pageToken=page-2")));
         }
@@ -505,20 +507,20 @@ class DataStudioTest {
 
     @Test
     void searchFailsInsteadOfReturningAPartialPageList() throws Exception {
-        try (FakeApi api = FakeApi.start()) {
+        try (var api = FakeApi.start()) {
             api.endlessPages = true;
-            Search task = search(api, FetchType.FETCH, 2);
-            IOException error = assertThrows(IOException.class, () -> task.run(TestsUtils.mockRunContext(this.runContextFactory, task, Map.of())));
+            var task = search(api, FetchType.FETCH, 2);
+            var error = assertThrows(IOException.class, () -> task.run(TestsUtils.mockRunContext(this.runContextFactory, task, Map.of())));
             assertTrue(error.getMessage().contains("exceeded 2 pages"));
         }
     }
 
     @Test
     void apiErrorsFailTheTask() throws Exception {
-        try (FakeApi api = FakeApi.start()) {
+        try (var api = FakeApi.start()) {
             api.status = 403;
-            Search task = search(api);
-            IOException error = assertThrows(IOException.class, () -> task.run(TestsUtils.mockRunContext(this.runContextFactory, task, Map.of())));
+            var task = search(api);
+            var error = assertThrows(IOException.class, () -> task.run(TestsUtils.mockRunContext(this.runContextFactory, task, Map.of())));
             assertTrue(error.getMessage().contains("Data Studio API"));
             assertTrue(error.getMessage().contains("403"));
             assertTrue(error.getMessage().contains("denied"));
@@ -528,11 +530,11 @@ class DataStudioTest {
 
     @Test
     void tokenErrorsFailTheTask() throws Exception {
-        KeyPair pair = rsa();
-        String serviceAccount = serviceAccount(pair);
-        try (FakeApi api = FakeApi.start()) {
+        var pair = rsa();
+        var serviceAccount = serviceAccount(pair);
+        try (var api = FakeApi.start()) {
             api.tokenStatus = 401;
-            Search task = Search.builder()
+            var task = Search.builder()
                 .id(taskId())
                 .type(Search.class.getName())
                 .serviceAccount(Property.ofValue(serviceAccount))
@@ -540,7 +542,7 @@ class DataStudioTest {
                 .tokenUri(Property.ofValue(api.tokenUri()))
                 .assetTypes(Property.ofValue(List.of(AssetType.REPORT)))
                 .build();
-            IOException error = assertThrows(IOException.class, () -> task.run(TestsUtils.mockRunContext(this.runContextFactory, task, Map.of())));
+            var error = assertThrows(IOException.class, () -> task.run(TestsUtils.mockRunContext(this.runContextFactory, task, Map.of())));
             assertTrue(error.getMessage().contains("Token endpoint"));
             assertTrue(error.getMessage().contains("401"));
             assertTrue(error.getMessage().contains("unauthorized"));
@@ -551,11 +553,11 @@ class DataStudioTest {
 
     @Test
     void addRequestsTheWriteScope() throws Exception {
-        KeyPair pair = rsa();
-        AtomicReference<String> assertion = new AtomicReference<>();
-        try (FakeApi api = FakeApi.start()) {
+        var pair = rsa();
+        var assertion = new AtomicReference<String>();
+        try (var api = FakeApi.start()) {
             api.onToken = body -> assertion.set(assertionOf(body));
-            Add add = Add.builder()
+            var add = Add.builder()
                 .id(taskId())
                 .type(Add.class.getName())
                 .serviceAccount(Property.ofValue(serviceAccount(pair)))
@@ -567,14 +569,14 @@ class DataStudioTest {
                 .build();
             add.run(TestsUtils.mockRunContext(this.runContextFactory, add, Map.of()));
         }
-        String payload = jwtPayload(assertion.get());
+        var payload = jwtPayload(assertion.get());
         assertTrue(payload.contains("\"scope\":\"" + DataStudioClient.WRITE_SCOPE + "\""));
         assertFalse(payload.contains("readonly"));
     }
 
     @Test
     void linkSharingRequiresAnOptIn() {
-        Add blocked = Add.builder()
+        var blocked = Add.builder()
             .id(taskId())
             .type(Add.class.getName())
             .accessToken(Property.ofValue("token-1"))
@@ -584,7 +586,7 @@ class DataStudioTest {
             .build();
         assertThrows(IllegalArgumentException.class, () -> blocked.run(TestsUtils.mockRunContext(this.runContextFactory, blocked, Map.of())));
 
-        Add malformed = Add.builder()
+        var malformed = Add.builder()
             .id(taskId())
             .type(Add.class.getName())
             .accessToken(Property.ofValue("token-1"))
@@ -594,14 +596,14 @@ class DataStudioTest {
             .build();
         assertThrows(IllegalArgumentException.class, () -> malformed.run(TestsUtils.mockRunContext(this.runContextFactory, malformed, Map.of())));
 
-        Revoke revoke = Revoke.builder()
+        var revoke = Revoke.builder()
             .id(taskId())
             .type(Revoke.class.getName())
             .accessToken(Property.ofValue("token-1"))
             .assetName(Property.ofValue("report-1"))
             .members(Property.ofValue(List.of("everyone")))
             .build();
-        IllegalArgumentException revokeError = assertThrows(
+        var revokeError = assertThrows(
             IllegalArgumentException.class,
             () -> revoke.run(TestsUtils.mockRunContext(this.runContextFactory, revoke, Map.of()))
         );
@@ -611,8 +613,8 @@ class DataStudioTest {
 
     @Test
     void linkRoleIsSentOnlyWhenOptedIn() throws Exception {
-        try (FakeApi api = FakeApi.start()) {
-            Add add = Add.builder()
+        try (var api = FakeApi.start()) {
+            var add = Add.builder()
                 .id(taskId())
                 .type(Add.class.getName())
                 .accessToken(Property.ofValue("token-1"))
@@ -630,7 +632,7 @@ class DataStudioTest {
 
     @Test
     void linkRoleIsRejectedForNamedMembersAndViewerIsRejectedForAllUsers() throws Exception {
-        Add namedWithLinkRole = Add.builder()
+        var namedWithLinkRole = Add.builder()
             .id(taskId())
             .type(Add.class.getName())
             .accessToken(Property.ofValue("token-1"))
@@ -641,7 +643,7 @@ class DataStudioTest {
             .build();
         assertThrows(IllegalArgumentException.class, () -> namedWithLinkRole.run(TestsUtils.mockRunContext(this.runContextFactory, namedWithLinkRole, Map.of())));
 
-        Add allUsersAsViewer = Add.builder()
+        var allUsersAsViewer = Add.builder()
             .id(taskId())
             .type(Add.class.getName())
             .accessToken(Property.ofValue("token-1"))
@@ -652,8 +654,8 @@ class DataStudioTest {
             .build();
         assertThrows(IllegalArgumentException.class, () -> allUsersAsViewer.run(TestsUtils.mockRunContext(this.runContextFactory, allUsersAsViewer, Map.of())));
 
-        try (FakeApi api = FakeApi.start()) {
-            Add domainAsViewer = Add.builder()
+        try (var api = FakeApi.start()) {
+            var domainAsViewer = Add.builder()
                 .id(taskId())
                 .type(Add.class.getName())
                 .accessToken(Property.ofValue("token-1"))
@@ -672,11 +674,11 @@ class DataStudioTest {
 
     @Test
     void removedAssetDoesNotFireAndANewOneDoes() throws Exception {
-        try (FakeApi api = FakeApi.start()) {
+        try (var api = FakeApi.start()) {
             api.searchBody = """
                 {"assets":[{"name":"report-1","title":"Sales","assetType":"REPORT","updateTime":"2026-04-01T00:00:00Z"}]}
                 """;
-            Trigger trigger = trigger(api);
+            var trigger = trigger(api);
             var baseline = TestsUtils.mockTrigger(this.runContextFactory, trigger);
             assertTrue(trigger.evaluate(baseline.getKey(), baseline.getValue()).isEmpty());
 
@@ -698,9 +700,9 @@ class DataStudioTest {
 
     @Test
     void truncatedSearchDoesNotMoveTheWatermark() throws Exception {
-        try (FakeApi api = FakeApi.start()) {
+        try (var api = FakeApi.start()) {
             api.endlessPages = true;
-            Trigger trigger = trigger(api);
+            var trigger = trigger(api);
             var context = TestsUtils.mockTrigger(this.runContextFactory, trigger);
             assertThrows(IOException.class, () -> trigger.evaluate(context.getKey(), context.getValue()));
 
@@ -715,9 +717,9 @@ class DataStudioTest {
 
     @Test
     void triggerMaxPagesCanBeRaisedAndStillFailsClosed() throws Exception {
-        try (FakeApi api = FakeApi.start()) {
+        try (var api = FakeApi.start()) {
             api.endlessPages = true;
-            Trigger trigger = Trigger.builder()
+            var trigger = Trigger.builder()
                 .id("watch")
                 .type(Trigger.class.getName())
                 .accessToken(Property.ofValue("token-1"))
@@ -727,7 +729,7 @@ class DataStudioTest {
                 .interval(Duration.ofMinutes(5))
                 .build();
             var context = TestsUtils.mockTrigger(this.runContextFactory, trigger);
-            IOException error = assertThrows(IOException.class, () -> trigger.evaluate(context.getKey(), context.getValue()));
+            var error = assertThrows(IOException.class, () -> trigger.evaluate(context.getKey(), context.getValue()));
             assertTrue(error.getMessage().contains("exceeded 1 pages"));
 
             api.endlessPages = false;
@@ -741,28 +743,28 @@ class DataStudioTest {
 
     @Test
     void watermarkIsIsolatedPerFlow() throws Exception {
-        try (FakeApi api = FakeApi.start()) {
+        try (var api = FakeApi.start()) {
             api.searchBody = """
                 {"assets":[{"name":"report-1","title":"Sales","assetType":"REPORT","updateTime":"2026-04-01T00:00:00Z"}]}
                 """;
-            Trigger trigger = trigger(api);
+            var trigger = trigger(api);
             var first = TestsUtils.mockTrigger(this.runContextFactory, trigger);
             assertTrue(trigger.evaluate(first.getKey(), first.getValue()).isEmpty());
 
             api.searchBody = """
                 {"assets":[{"name":"report-1","title":"Sales Q2","assetType":"REPORT","updateTime":"2026-04-02T00:00:00Z"}]}
                 """;
-            Flow otherFlow = Flow.builder()
+            var otherFlow = Flow.builder()
                 .id("other-flow")
                 .namespace(first.getKey().getFlow().getNamespace())
                 .tenantId(first.getKey().getFlow().getTenantId())
                 .revision(1)
                 .build();
-            ConditionContext otherCondition = ConditionContext.builder()
+            var otherCondition = ConditionContext.builder()
                 .runContext(first.getKey().getRunContext())
                 .flow(otherFlow)
                 .build();
-            TriggerContext otherContext = TriggerContext.builder()
+            var otherContext = TriggerContext.builder()
                 .namespace(otherFlow.getNamespace())
                 .flowId(otherFlow.getId())
                 .triggerId(trigger.getId())
@@ -782,7 +784,7 @@ class DataStudioTest {
     }
 
     private Search search(FakeApi api, FetchType fetchType, Integer maxPages) {
-        Search.SearchBuilder<?, ?> builder = Search.builder()
+        var builder = Search.builder()
             .id(taskId())
             .type(Search.class.getName())
             .accessToken(Property.ofValue("token-1"))
@@ -811,13 +813,13 @@ class DataStudioTest {
     }
 
     private static KeyPair rsa() throws Exception {
-        KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
+        var generator = KeyPairGenerator.getInstance("RSA");
         generator.initialize(2048);
         return generator.generateKeyPair();
     }
 
     private static String serviceAccount(KeyPair pair) throws Exception {
-        String pem = "-----BEGIN PRIVATE KEY-----\n"
+        var pem = "-----BEGIN PRIVATE KEY-----\n"
             + Base64.getMimeEncoder(64, "\n".getBytes(StandardCharsets.UTF_8)).encodeToString(pair.getPrivate().getEncoded())
             + "\n-----END PRIVATE KEY-----\n";
         return JacksonMapper.ofJson().writeValueAsString(Map.of(
@@ -827,16 +829,16 @@ class DataStudioTest {
     }
 
     private static String assertionOf(String body) {
-        for (String part : body.split("&")) {
+        for (var part : body.split("&")) {
             if (part.startsWith("assertion=")) {
-                return java.net.URLDecoder.decode(part.substring("assertion=".length()), StandardCharsets.UTF_8);
+                return URLDecoder.decode(part.substring("assertion=".length()), StandardCharsets.UTF_8);
             }
         }
         return "";
     }
 
     private static String jwtPayload(String assertion) {
-        String[] parts = assertion.split("\\.");
+        var parts = assertion.split("\\.");
         return new String(Base64.getUrlDecoder().decode(parts[1]), StandardCharsets.UTF_8);
     }
 
@@ -860,7 +862,7 @@ class DataStudioTest {
         private int searchCalls = 0;
         private List<String> searchPages;
         private final List<String> queries = new ArrayList<>();
-        private java.util.function.Consumer<String> onToken = body -> {
+        private Consumer<String> onToken = body -> {
         };
 
         private FakeApi(HttpServer server) {
@@ -868,19 +870,19 @@ class DataStudioTest {
         }
 
         static FakeApi start() throws Exception {
-            HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
-            FakeApi api = new FakeApi(server);
+            var server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+            var api = new FakeApi(server);
             server.createContext("/", exchange -> {
-                String path = exchange.getRequestURI().getPath();
-                String query = exchange.getRequestURI().getRawQuery();
-                byte[] request = exchange.getRequestBody().readAllBytes();
+                var path = exchange.getRequestURI().getPath();
+                var query = exchange.getRequestURI().getRawQuery();
+                var request = exchange.getRequestBody().readAllBytes();
                 api.lastMethod = exchange.getRequestMethod();
                 api.lastPath = path;
                 api.lastQuery = query;
                 api.lastBody = new String(request, StandardCharsets.UTF_8);
                 api.lastAuthorization = exchange.getRequestHeaders().getFirst("Authorization");
                 api.queries.add(query);
-                int code = 200;
+                var code = 200;
                 byte[] response;
                 if ("/token".equals(path)) {
                     api.onToken.accept(api.lastBody);
@@ -893,7 +895,7 @@ class DataStudioTest {
                 } else if (path.endsWith("/permissions") || path.contains("permissions:")) {
                     response = api.permissionsBody.getBytes(StandardCharsets.UTF_8);
                 } else if (api.endlessPages) {
-                    int call = api.searchCalls++;
+                    var call = api.searchCalls++;
                     response = ("{\"assets\":[{\"name\":\"report-" + call + "\",\"title\":\"Page\",\"assetType\":\"REPORT\",\"updateTime\":\"2026-04-01T00:00:00Z\"}],\"nextPageToken\":\"page-" + (call + 1) + "\"}")
                         .getBytes(StandardCharsets.UTF_8);
                     code = api.status;
@@ -901,7 +903,7 @@ class DataStudioTest {
                     response = api.trashedBody.getBytes(StandardCharsets.UTF_8);
                     code = api.status;
                 } else if (api.searchPages != null) {
-                    int index = query != null && query.contains("pageToken=page-2") ? 1 : 0;
+                    var index = query != null && query.contains("pageToken=page-2") ? 1 : 0;
                     response = api.searchPages.get(index).getBytes(StandardCharsets.UTF_8);
                     code = api.status;
                 } else {
@@ -913,7 +915,7 @@ class DataStudioTest {
                 }
                 exchange.getResponseHeaders().add("Content-Type", "application/json");
                 exchange.sendResponseHeaders(code, response.length);
-                try (OutputStream output = exchange.getResponseBody()) {
+                try (var output = exchange.getResponseBody()) {
                     output.write(response);
                 }
             });

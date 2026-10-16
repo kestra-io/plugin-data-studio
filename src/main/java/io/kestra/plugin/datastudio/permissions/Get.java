@@ -1,9 +1,7 @@
 package io.kestra.plugin.datastudio.permissions;
 
 import java.net.URI;
-import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
 import io.kestra.core.models.annotations.Example;
 import io.kestra.core.models.annotations.Plugin;
@@ -33,7 +31,9 @@ import lombok.experimental.SuperBuilder;
 @NoArgsConstructor
 @Schema(
     title = "List Data Studio asset permissions",
-    description = "List who has access to a report or data source, grouped by role."
+    description = """
+        List who has access to a report or data source, grouped by role.
+        """
 )
 @Plugin(
     examples = {
@@ -59,14 +59,26 @@ import lombok.experimental.SuperBuilder;
 )
 public class Get extends AbstractDataStudioTask implements RunnableTask<Get.Output> {
 
-    @Schema(title = "Asset name", description = "The Data Studio asset ID.")
-    @PluginProperty(group = "source")
+    @Schema(
+
+        title = "Asset name",
+
+        description = """
+
+            The Data Studio asset ID.
+
+            """
+
+    )
+    @PluginProperty(group = "main")
     @NotNull
     private Property<String> assetName;
 
     @Schema(
         title = "Fetch type",
-        description = "FETCH returns every member in the execution context. FETCH_ONE returns the first member. STORE writes an Ion file of members to internal storage. NONE returns only the count."
+        description = """
+            FETCH returns every member in the execution context. FETCH_ONE returns the first member. STORE writes an Ion file of members to internal storage. NONE returns only the count.
+            """
     )
     @PluginProperty(group = "main")
     @NotNull
@@ -80,46 +92,19 @@ public class Get extends AbstractDataStudioTask implements RunnableTask<Get.Outp
         var rFetchType = runContext.render(this.fetchType).as(FetchType.class).orElse(FetchType.FETCH);
 
         Permissions permissions;
-        try (DataStudioClient client = this.open(runContext)) {
+        try (var client = this.open(runContext)) {
             runContext.logger().info("Reading permissions for Data Studio asset {}", rAssetName);
             permissions = client.getPermissions(rAssetName);
         }
 
-        List<Member> members = flatten(permissions);
-        FetchResults.Stored<Member> stored = FetchResults.apply(runContext, rFetchType, members);
+        var members = Members.flatten(permissions);
+        var stored = FetchResults.apply(runContext, rFetchType, members);
         return Output.builder()
             .size(stored.size())
             .uri(stored.uri())
             .member(stored.one())
             .members(stored.many())
             .build();
-    }
-
-    static List<Member> flatten(Permissions permissions) {
-        List<Member> members = new ArrayList<>();
-        if (permissions == null || permissions.getPermissions() == null) {
-            return members;
-        }
-        permissions.getPermissions().forEach((role, value) -> {
-            if (value == null || value.getMembers() == null) {
-                return;
-            }
-            for (String member : value.getMembers()) {
-                members.add(Member.builder().role(role).member(member).build());
-            }
-        });
-        return members;
-    }
-
-    static Map<String, List<String>> roleMap(Permissions permissions) {
-        if (permissions == null || permissions.getPermissions() == null) {
-            return Map.of();
-        }
-        return permissions.getPermissions().entrySet().stream()
-            .collect(java.util.stream.Collectors.toMap(
-                Map.Entry::getKey,
-                entry -> entry.getValue() == null || entry.getValue().getMembers() == null ? List.of() : entry.getValue().getMembers()
-            ));
     }
 
     @Builder
@@ -131,19 +116,25 @@ public class Get extends AbstractDataStudioTask implements RunnableTask<Get.Outp
 
         @Schema(
             title = "Internal storage URI",
-            description = "Ion file of members. Set only when `fetchType` is STORE."
+            description = """
+                Ion file of members. Set only when `fetchType` is STORE.
+                """
         )
         private final URI uri;
 
         @Schema(
             title = "First member",
-            description = "Set only when `fetchType` is FETCH_ONE."
+            description = """
+                Set only when `fetchType` is FETCH_ONE.
+                """
         )
         private final Member member;
 
         @Schema(
             title = "Members",
-            description = "Set only when `fetchType` is FETCH. Each member includes its role, so the role map is not repeated."
+            description = """
+                Set only when `fetchType` is FETCH. Each member includes its role, so the role map is not repeated.
+                """
         )
         private final List<Member> members;
     }

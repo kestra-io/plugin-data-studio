@@ -17,6 +17,4 @@ public class SearchResponse {
     private List<Asset> assets;
 
     private String nextPageToken;
-
-    private String previousPageToken;
 }

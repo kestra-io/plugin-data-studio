@@ -7,6 +7,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.KeyFactory;
 import java.security.PrivateKey;
 import java.security.Signature;
+import java.security.spec.PKCS8EncodedKeySpec;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -32,14 +33,7 @@ import io.kestra.plugin.datastudio.models.Asset;
 import io.kestra.plugin.datastudio.models.Permissions;
 import io.kestra.plugin.datastudio.models.SearchResponse;
 
-/**
- * Stateless Data Studio HTTP client. Create it inside {@code run()} and close it before returning.
- *
- * <p>Data Studio has no Java client in {@code plugin-gcp}, and this plugin is not allowed to add
- * another HTTP stack, so a service account is exchanged with a JWT bearer request through Kestra's
- * {@code HttpClient}. Read tasks request {@code datastudio.readonly}. Only grant and revoke request
- * {@code datastudio}.
- */
+// JWT bearer exchange by hand: Data Studio has no client in plugin-gcp and this plugin adds no other HTTP stack.
 public final class DataStudioClient implements AutoCloseable {
     private static final ObjectMapper JSON = JacksonMapper.ofJson().copy()
         .enable(DeserializationFeature.READ_UNKNOWN_ENUM_VALUES_USING_DEFAULT_VALUE);
@@ -60,10 +54,6 @@ public final class DataStudioClient implements AutoCloseable {
         this.accessToken = accessToken;
     }
 
-    public static DataStudioClient open(RunContext runContext, DataStudioConnection connection) throws Exception {
-        return open(runContext, connection, false);
-    }
-
     public static DataStudioClient open(RunContext runContext, DataStudioConnection connection, boolean write) throws Exception {
         var rBaseUrl = runContext.render(connection.getBaseUrl()).as(String.class)
             .orElse("https://datastudio.googleapis.com/v1");
@@ -73,14 +63,14 @@ public final class DataStudioClient implements AutoCloseable {
         var rServiceAccount = blankToNull(runContext.render(connection.getServiceAccount()).as(String.class).orElse(null));
         var rSubject = blankToNull(runContext.render(connection.getSubject()).as(String.class).orElse(null));
 
-        HttpClient httpClient = new HttpClient(runContext, HttpConfiguration.builder()
+        var httpClient = new HttpClient(runContext, HttpConfiguration.builder()
             .timeout(TimeoutConfiguration.builder()
                 .connectTimeout(Property.ofValue(Duration.ofSeconds(30)))
                 .readIdleTimeout(Property.ofValue(Duration.ofMinutes(2)))
                 .build())
             .build());
         try {
-            String token = rAccessToken != null
+            var token = rAccessToken != null
                 ? rAccessToken
                 : exchangeServiceAccount(runContext, httpClient, rServiceAccount, rSubject, rTokenUri, write ? WRITE_SCOPE : READ_SCOPE);
             return new DataStudioClient(runContext, httpClient, rBaseUrl, token);
@@ -91,23 +81,23 @@ public final class DataStudioClient implements AutoCloseable {
     }
 
     public List<Asset> searchAll(String assetType, String title, String owner, Boolean includeTrashed, String orderBy, Integer pageSize, int maxPages) throws Exception {
-        List<Asset> all = new ArrayList<>();
+        var all = new ArrayList<Asset>();
         consumeSearch(assetType, title, owner, includeTrashed, orderBy, pageSize, maxPages, all::add);
         return all;
     }
 
     public Asset findByName(String assetType, String assetName, boolean includeTrashed, int maxPages) throws Exception {
         String pageToken = null;
-        for (int page = 0; page < maxPages; page++) {
-            SearchResponse response = search(assetType, null, null, includeTrashed, null, null, pageToken);
+        for (var page = 0; page < maxPages; page++) {
+            var response = search(assetType, null, null, includeTrashed, null, null, pageToken);
             if (response.getAssets() != null) {
-                for (Asset asset : response.getAssets()) {
+                for (var asset : response.getAssets()) {
                     if (assetName.equals(asset.getName())) {
                         return asset;
                     }
                 }
             }
-            String next = response.getNextPageToken();
+            var next = response.getNextPageToken();
             if (next == null || next.isBlank() || next.equals(pageToken)) {
                 return null;
             }
@@ -118,14 +108,14 @@ public final class DataStudioClient implements AutoCloseable {
 
     public void consumeSearch(String assetType, String title, String owner, Boolean includeTrashed, String orderBy, Integer pageSize, int maxPages, AssetConsumer consumer) throws Exception {
         String pageToken = null;
-        for (int page = 0; page < maxPages; page++) {
-            SearchResponse response = search(assetType, title, owner, includeTrashed, orderBy, pageSize, pageToken);
+        for (var page = 0; page < maxPages; page++) {
+            var response = search(assetType, title, owner, includeTrashed, orderBy, pageSize, pageToken);
             if (response.getAssets() != null) {
-                for (Asset asset : response.getAssets()) {
+                for (var asset : response.getAssets()) {
                     consumer.accept(asset);
                 }
             }
-            String next = response.getNextPageToken();
+            var next = response.getNextPageToken();
             if (next == null || next.isBlank() || next.equals(pageToken)) {
                 return;
             }
@@ -144,7 +134,7 @@ public final class DataStudioClient implements AutoCloseable {
     }
 
     public SearchResponse search(String assetType, String title, String owner, Boolean includeTrashed, String orderBy, Integer pageSize, String pageToken) throws Exception {
-        Map<String, String> query = new LinkedHashMap<>();
+        var query = new LinkedHashMap<String, String>();
         query.put("assetTypes", assetType);
         query.put("title", title);
         query.put("owner", owner);
@@ -164,7 +154,7 @@ public final class DataStudioClient implements AutoCloseable {
     }
 
     public Permissions addMembers(String assetName, String role, List<String> members) throws Exception {
-        Map<String, Object> body = new LinkedHashMap<>();
+        var body = new LinkedHashMap<String, Object>();
         body.put("role", role);
         body.put("members", members);
         return post(this.baseUrl + "/assets/" + encode(assetName) + "/permissions:addMembers", body, Permissions.class);
@@ -180,7 +170,7 @@ public final class DataStudioClient implements AutoCloseable {
     }
 
     private <T> T get(String url, Class<T> type) throws Exception {
-        HttpRequest request = HttpRequest.builder()
+        var request = HttpRequest.builder()
             .uri(URI.create(url))
             .method("GET")
             .addHeader("Authorization", "Bearer " + this.accessToken)
@@ -190,7 +180,7 @@ public final class DataStudioClient implements AutoCloseable {
     }
 
     private <T> T post(String url, Object body, Class<T> type) throws Exception {
-        HttpRequest request = HttpRequest.builder()
+        var request = HttpRequest.builder()
             .uri(URI.create(url))
             .method("POST")
             .addHeader("Authorization", "Bearer " + this.accessToken)
@@ -212,8 +202,8 @@ public final class DataStudioClient implements AutoCloseable {
         } catch (HttpClientResponseException e) {
             throw apiError(e, "Data Studio API");
         }
-        int code = response.getStatus().getCode();
-        String body = response.getBody() == null ? "" : response.getBody();
+        var code = response.getStatus().getCode();
+        var body = response.getBody() == null ? "" : response.getBody();
         if (code >= 400) {
             throw new IOException("Data Studio API returned HTTP " + code + ": " + truncate(body));
         }
@@ -227,17 +217,17 @@ public final class DataStudioClient implements AutoCloseable {
         if (serviceAccount == null) {
             throw new IllegalArgumentException("Set serviceAccount or accessToken");
         }
-        Map<String, Object> key = JacksonMapper.ofJson().readValue(serviceAccount, new TypeReference<>() {
+        var key = JacksonMapper.ofJson().readValue(serviceAccount, new TypeReference<Map<String, Object>>() {
         });
-        String clientEmail = stringClaim(key, "client_email");
-        String privateKeyPem = stringClaim(key, "private_key");
+        var clientEmail = stringClaim(key, "client_email");
+        var privateKeyPem = stringClaim(key, "private_key");
         if (clientEmail == null || privateKeyPem == null) {
             throw new IllegalArgumentException("Service account JSON must contain client_email and private_key");
         }
 
-        String assertion = signJwt(clientEmail, privateKeyPem, subject, tokenUri, scope);
-        String form = "grant_type=" + encode("urn:ietf:params:oauth:grant-type:jwt-bearer") + "&assertion=" + encode(assertion);
-        HttpRequest request = HttpRequest.builder()
+        var assertion = signJwt(clientEmail, privateKeyPem, subject, tokenUri, scope);
+        var form = "grant_type=" + encode("urn:ietf:params:oauth:grant-type:jwt-bearer") + "&assertion=" + encode(assertion);
+        var request = HttpRequest.builder()
             .uri(URI.create(tokenUri))
             .method("POST")
             .addHeader("Content-Type", "application/x-www-form-urlencoded")
@@ -259,9 +249,9 @@ public final class DataStudioClient implements AutoCloseable {
         if (response.getBody() == null || response.getBody().isBlank()) {
             throw new IOException("Token endpoint returned an empty body");
         }
-        Map<String, Object> token = JacksonMapper.ofJson().readValue(response.getBody(), new TypeReference<>() {
+        var token = JacksonMapper.ofJson().readValue(response.getBody(), new TypeReference<Map<String, Object>>() {
         });
-        String accessToken = stringClaim(token, "access_token");
+        var accessToken = stringClaim(token, "access_token");
         if (accessToken == null) {
             throw new IOException("Token endpoint response did not contain access_token");
         }
@@ -269,8 +259,8 @@ public final class DataStudioClient implements AutoCloseable {
     }
 
     private static String signJwt(String clientEmail, String privateKeyPem, String subject, String tokenUri, String scope) throws Exception {
-        Instant now = Instant.now();
-        Map<String, Object> claims = new LinkedHashMap<>();
+        var now = Instant.now();
+        var claims = new LinkedHashMap<String, Object>();
         claims.put("iss", clientEmail);
         claims.put("scope", scope);
         claims.put("aud", tokenUri);
@@ -279,22 +269,22 @@ public final class DataStudioClient implements AutoCloseable {
         if (subject != null) {
             claims.put("sub", subject);
         }
-        String header = base64Url(JacksonMapper.ofJson().writeValueAsBytes(Map.of("alg", "RS256", "typ", "JWT")));
-        String payload = base64Url(JacksonMapper.ofJson().writeValueAsBytes(claims));
-        String signingInput = header + "." + payload;
-        Signature signature = Signature.getInstance("SHA256withRSA");
+        var header = base64Url(JacksonMapper.ofJson().writeValueAsBytes(Map.of("alg", "RS256", "typ", "JWT")));
+        var payload = base64Url(JacksonMapper.ofJson().writeValueAsBytes(claims));
+        var signingInput = header + "." + payload;
+        var signature = Signature.getInstance("SHA256withRSA");
         signature.initSign(readPrivateKey(privateKeyPem));
         signature.update(signingInput.getBytes(StandardCharsets.UTF_8));
         return signingInput + "." + base64Url(signature.sign());
     }
 
     private static PrivateKey readPrivateKey(String pem) throws Exception {
-        String base64 = pem
+        var base64 = pem
             .replace("-----BEGIN PRIVATE KEY-----", "")
             .replace("-----END PRIVATE KEY-----", "")
             .replaceAll("\\s", "");
-        byte[] decoded = Base64.getDecoder().decode(base64);
-        return KeyFactory.getInstance("RSA").generatePrivate(new java.security.spec.PKCS8EncodedKeySpec(decoded));
+        var decoded = Base64.getDecoder().decode(base64);
+        return KeyFactory.getInstance("RSA").generatePrivate(new PKCS8EncodedKeySpec(decoded));
     }
 
     private static String base64Url(byte[] bytes) {
@@ -302,7 +292,7 @@ public final class DataStudioClient implements AutoCloseable {
     }
 
     private static String toQuery(Map<String, String> params) {
-        StringBuilder builder = new StringBuilder();
+        var builder = new StringBuilder();
         params.forEach((key, value) -> {
             if (value == null || value.isBlank()) {
                 return;
@@ -329,13 +319,13 @@ public final class DataStudioClient implements AutoCloseable {
     }
 
     private static String stringClaim(Map<String, Object> values, String key) {
-        Object value = values.get(key);
+        var value = values.get(key);
         return value == null ? null : value.toString();
     }
 
     private static IOException apiError(HttpClientResponseException exception, String label) {
-        HttpResponse<?> response = exception.getResponse();
-        int code = response == null || response.getStatus() == null ? 0 : response.getStatus().getCode();
+        var response = exception.getResponse();
+        var code = response == null || response.getStatus() == null ? 0 : response.getStatus().getCode();
         return new IOException(label + " returned HTTP " + code + ": " + truncate(bodyText(response)), exception);
     }
 
@@ -343,7 +333,7 @@ public final class DataStudioClient implements AutoCloseable {
         if (response == null || response.getBody() == null) {
             return "";
         }
-        Object body = response.getBody();
+        var body = response.getBody();
         if (body instanceof byte[] bytes) {
             return new String(bytes, StandardCharsets.UTF_8);
         }

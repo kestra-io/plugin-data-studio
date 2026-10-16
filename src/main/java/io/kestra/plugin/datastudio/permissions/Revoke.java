@@ -28,7 +28,9 @@ import lombok.experimental.SuperBuilder;
 @NoArgsConstructor
 @Schema(
     title = "Revoke Data Studio access",
-    description = "Remove members from a report or data source. Owners and the calling user cannot be removed. Unknown members do not fail the request."
+    description = """
+        Remove members from a report or data source. Owners and the calling user cannot be removed. Unknown members do not fail the request.
+        """
 )
 @Plugin(
     examples = {
@@ -56,14 +58,26 @@ import lombok.experimental.SuperBuilder;
 )
 public class Revoke extends AbstractDataStudioTask implements RunnableTask<Revoke.Output> {
 
-    @Schema(title = "Asset name", description = "The Data Studio asset ID.")
+    @Schema(
+
+        title = "Asset name",
+
+        description = """
+
+            The Data Studio asset ID.
+
+            """
+
+    )
     @PluginProperty(group = "main")
     @NotNull
     private Property<String> assetName;
 
     @Schema(
         title = "Members",
-        description = "Members to remove. Each entry must use `user:`, `group:`, `serviceAccount:`, `domain:`, or `allUsers`."
+        description = """
+            Members to remove. Each entry must use `user:`, `group:`, `serviceAccount:`, `domain:`, or `allUsers`.
+            """
     )
     @PluginProperty(group = "main")
     @NotNull
@@ -77,13 +91,13 @@ public class Revoke extends AbstractDataStudioTask implements RunnableTask<Revok
         Members.validateRevoke(rMembers);
 
         Permissions permissions;
-        try (DataStudioClient client = this.open(runContext, true)) {
+        try (var client = this.open(runContext, true)) {
             runContext.logger().info("Revoking access on Data Studio asset {} for {}", rAssetName, rMembers);
             permissions = client.revokeMembers(rAssetName, rMembers);
         }
         return Output.builder()
-            .permissions(Get.roleMap(permissions))
-            .size(Get.flatten(permissions).size())
+            .permissions(Members.roleMap(permissions))
+            .size(Members.flatten(permissions).size())
             .build();
     }
 

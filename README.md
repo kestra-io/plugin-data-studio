@@ -49,7 +49,7 @@ Tasks and a polling trigger under `io.kestra.plugin.datastudio`:
 - `assets.Trigger` fires when an asset is created or updated, using a watermark in the namespace KV store.
 - `permissions.Get`, `permissions.Add`, and `permissions.Revoke` manage who can access an asset.
 
-Authenticate with a Google service account (`https://www.googleapis.com/auth/datastudio`) or an OAuth access token. The API requires a Google Workspace or Cloud Identity organization. It does not refresh datasets or render reports.
+Authenticate with a Google service account or an OAuth access token. Search, Get, `permissions.Get`, and the trigger use the `https://www.googleapis.com/auth/datastudio.readonly` scope. `permissions.Add` and `permissions.Revoke` use `https://www.googleapis.com/auth/datastudio`. The API requires a Google Workspace or Cloud Identity organization. It does not refresh datasets or render reports.
 
 ## Running Kestra locally with this plugin
 

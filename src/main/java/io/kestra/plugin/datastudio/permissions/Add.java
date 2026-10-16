@@ -28,7 +28,9 @@ import lombok.experimental.SuperBuilder;
 @NoArgsConstructor
 @Schema(
     title = "Grant Data Studio access",
-    description = "Add members to a role on a report or data source. `role` is VIEWER or EDITOR and applies to `user:`, `group:`, `serviceAccount:`, and `domain:` members. `linkRole` is LINK_VIEWER or LINK_EDITOR and applies only to `allUsers` and `domain:` members. One call uses one role, so named members and link members cannot be mixed. `allUsers` and `domain:` require `allowLinkSharing: true`."
+    description = """
+        Add members to a role on a report or data source. `role` is VIEWER or EDITOR and applies to `user:`, `group:`, `serviceAccount:`, and `domain:` members. `linkRole` is LINK_VIEWER or LINK_EDITOR and applies only to `allUsers` and `domain:` members. One call uses one role, so named members and link members cannot be mixed. `allUsers` and `domain:` require `allowLinkSharing: true`.
+        """
 )
 @Plugin(
     examples = {
@@ -57,14 +59,26 @@ import lombok.experimental.SuperBuilder;
 )
 public class Add extends AbstractDataStudioTask implements RunnableTask<Add.Output> {
 
-    @Schema(title = "Asset name", description = "The Data Studio asset ID.")
+    @Schema(
+
+        title = "Asset name",
+
+        description = """
+
+            The Data Studio asset ID.
+
+            """
+
+    )
     @PluginProperty(group = "main")
     @NotNull
     private Property<String> assetName;
 
     @Schema(
         title = "Role",
-        description = "Role to grant. VIEWER or EDITOR. OWNER, LINK_VIEWER, and LINK_EDITOR are not accepted here."
+        description = """
+            Role to grant. VIEWER or EDITOR. OWNER, LINK_VIEWER, and LINK_EDITOR are not accepted here.
+            """
     )
     @PluginProperty(group = "main")
     @NotNull
@@ -73,14 +87,18 @@ public class Add extends AbstractDataStudioTask implements RunnableTask<Add.Outp
 
     @Schema(
         title = "Link role",
-        description = "LINK_VIEWER or LINK_EDITOR. Used only when every member is `allUsers` or `domain:`. Requires `allowLinkSharing`. Do not set this when granting `role` to `user:`, `group:`, or `serviceAccount:` members."
+        description = """
+            LINK_VIEWER or LINK_EDITOR. Used only when every member is `allUsers` or `domain:`. Requires `allowLinkSharing`. Do not set this when granting `role` to `user:`, `group:`, or `serviceAccount:` members.
+            """
     )
     @PluginProperty(group = "main")
     private Property<LinkRole> linkRole;
 
     @Schema(
         title = "Allow link sharing",
-        description = "Permit `allUsers`, `domain:` members, and `linkRole`. Leave false unless the flow should make an asset public or domain-wide."
+        description = """
+            Permit `allUsers`, `domain:` members, and `linkRole`. Leave false unless the flow should make an asset public or domain-wide.
+            """
     )
     @PluginProperty(group = "reliability")
     @NotNull
@@ -89,7 +107,9 @@ public class Add extends AbstractDataStudioTask implements RunnableTask<Add.Outp
 
     @Schema(
         title = "Members",
-        description = "Members to add. `user:`, `group:`, and `serviceAccount:` take `role`. `allUsers` takes `linkRole`. `domain:` takes `role` or `linkRole`. `allUsers` and `domain:` require `allowLinkSharing`."
+        description = """
+            Members to add. `user:`, `group:`, and `serviceAccount:` take `role`. `allUsers` takes `linkRole`. `domain:` takes `role` or `linkRole`. `allUsers` and `domain:` require `allowLinkSharing`.
+            """
     )
     @PluginProperty(group = "main")
     @NotNull
@@ -106,13 +126,13 @@ public class Add extends AbstractDataStudioTask implements RunnableTask<Add.Outp
         var rGrantRole = Members.grantRole(rRole, rLinkRole, rAllowLinkSharing, rMembers);
 
         Permissions permissions;
-        try (DataStudioClient client = this.open(runContext, true)) {
+        try (var client = this.open(runContext, true)) {
             runContext.logger().info("Granting {} on Data Studio asset {} to {}", rGrantRole, rAssetName, rMembers);
             permissions = client.addMembers(rAssetName, rGrantRole, rMembers);
         }
         return Output.builder()
-            .permissions(Get.roleMap(permissions))
-            .size(Get.flatten(permissions).size())
+            .permissions(Members.roleMap(permissions))
+            .size(Members.flatten(permissions).size())
             .build();
     }
 
