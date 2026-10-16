@@ -70,7 +70,7 @@ public class Search extends AbstractDataStudioTask implements RunnableTask<Searc
 
     @Schema(
         title = "Asset types",
-        description = "Asset types to search. Each value is queried separately because the API accepts exactly one type per request. Allowed values are REPORT and DATA_SOURCE."
+        description = "Asset types to search. Each value is queried separately because the API accepts exactly one type per request. Allowed values are REPORT and DATA_SOURCE. UNKNOWN is output-only and is rejected here."
     )
     @PluginProperty(group = "source")
     @NotNull
@@ -137,6 +137,7 @@ public class Search extends AbstractDataStudioTask implements RunnableTask<Searc
         if (rAssetTypes.isEmpty()) {
             throw new IllegalArgumentException("assetTypes must contain REPORT or DATA_SOURCE");
         }
+        AssetType.rejectUnknownRequest(rAssetTypes);
         var rTitle = runContext.render(this.title).as(String.class).orElse(null);
         var rOwner = runContext.render(this.owner).as(String.class).orElse(null);
         var rIncludeTrashed = runContext.render(this.includeTrashed).as(Boolean.class).orElse(false);

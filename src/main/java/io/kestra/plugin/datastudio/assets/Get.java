@@ -67,7 +67,7 @@ public class Get extends AbstractDataStudioTask implements RunnableTask<Get.Outp
 
     @Schema(
         title = "Asset types",
-        description = "Types to search while looking up the asset. Defaults to REPORT and DATA_SOURCE."
+        description = "Types to search while looking up the asset. Defaults to REPORT and DATA_SOURCE. UNKNOWN is output-only and is rejected here."
     )
     @PluginProperty(group = "source")
     @Builder.Default
@@ -99,6 +99,7 @@ public class Get extends AbstractDataStudioTask implements RunnableTask<Get.Outp
         if (rAssetTypes.isEmpty()) {
             rAssetTypes = List.of(AssetType.REPORT, AssetType.DATA_SOURCE);
         }
+        AssetType.rejectUnknownRequest(rAssetTypes);
         var rIncludeTrashed = runContext.render(this.includeTrashed).as(Boolean.class).orElse(false);
         var rMaxPages = runContext.render(this.maxPages).as(Integer.class).orElse(DataStudioClient.DEFAULT_MAX_PAGES);
         if (rMaxPages < 1) {

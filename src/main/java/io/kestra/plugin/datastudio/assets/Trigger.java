@@ -122,7 +122,7 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
 
     @Schema(
         title = "Asset types",
-        description = "Asset types to watch. Each value is queried separately. Allowed values are REPORT and DATA_SOURCE."
+        description = "Asset types to watch. Each value is queried separately. Allowed values are REPORT and DATA_SOURCE. UNKNOWN is output-only and is rejected here."
     )
     @PluginProperty(group = "source")
     @NotNull
@@ -160,6 +160,7 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
     public Optional<Execution> evaluate(ConditionContext conditionContext, TriggerContext context) throws Exception {
         RunContext runContext = conditionContext.getRunContext();
         var rAssetTypes = runContext.render(this.assetTypes).asList(AssetType.class);
+        AssetType.rejectUnknownRequest(rAssetTypes);
         var rMaxPages = runContext.render(this.maxPages).as(Integer.class).orElse(DataStudioClient.DEFAULT_MAX_PAGES);
         var rMaxAssetsInOutput = runContext.render(this.maxAssetsInOutput).as(Integer.class).orElse(100);
         if (rMaxPages < 1 || rMaxAssetsInOutput < 1) {

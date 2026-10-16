@@ -340,6 +340,21 @@ class DataStudioTest {
     }
 
     @Test
+    void unknownAssetTypeIsRejectedAsARequestValue() {
+        Search search = Search.builder()
+            .id(taskId())
+            .type(Search.class.getName())
+            .accessToken(Property.ofValue("token-1"))
+            .assetTypes(Property.ofValue(List.of(AssetType.UNKNOWN)))
+            .build();
+        IllegalArgumentException error = assertThrows(
+            IllegalArgumentException.class,
+            () -> search.run(TestsUtils.mockRunContext(this.runContextFactory, search, Map.of()))
+        );
+        assertTrue(error.getMessage().contains("UNKNOWN"));
+    }
+
+    @Test
     void triggerCapsAssetsAndKeepsTheFullSize() throws Exception {
         try (FakeApi api = FakeApi.start()) {
             api.searchBody = """
