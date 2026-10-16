@@ -1,0 +1,8 @@
+group: io.kestra.plugin.datastudio.permissions
+name: "permissions"
+title: "Data Studio Permissions"
+description: "List, grant, and revoke access to Data Studio reports and data sources."
+body: "Read the members on an asset, grant VIEWER or EDITOR access, or revoke members. user:, group:, and serviceAccount: take VIEWER or EDITOR. allUsers takes LINK_VIEWER or LINK_EDITOR. domain: takes either. allUsers and domain: require allowLinkSharing."
+videos: []
+createdBy: "Kestra Core Team"
+managedBy: "Kestra Core Team"

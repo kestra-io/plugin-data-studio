@@ -1,0 +1,114 @@
+package io.kestra.plugin.datastudio.permissions;
+
+import java.util.List;
+import java.util.Map;
+
+import io.kestra.core.models.annotations.Example;
+import io.kestra.core.models.annotations.Plugin;
+import io.kestra.core.models.annotations.PluginProperty;
+import io.kestra.core.models.property.Property;
+import io.kestra.core.models.tasks.RunnableTask;
+import io.kestra.core.runners.RunContext;
+import io.kestra.plugin.datastudio.AbstractDataStudioTask;
+import io.kestra.plugin.datastudio.DataStudioClient;
+import io.kestra.plugin.datastudio.models.Permissions;
+import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.constraints.NotNull;
+import lombok.Builder;
+import lombok.EqualsAndHashCode;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.ToString;
+import lombok.experimental.SuperBuilder;
+
+@SuperBuilder
+@ToString(callSuper = true)
+@EqualsAndHashCode(callSuper = true)
+@Getter
+@NoArgsConstructor
+@Schema(
+    title = "Revoke Data Studio access",
+    description = """
+        Remove members from a report or data source. Owners and the calling user cannot be removed. Unknown members do not fail the request.
+        """
+)
+@Plugin(
+    examples = {
+        @Example(
+            title = "Revoke a user's access to a report",
+            full = true,
+            code = """
+                id: permissions_revoke
+                namespace: company.team
+
+                inputs:
+                  - id: asset_id
+                    type: STRING
+
+                tasks:
+                  - id: revoke
+                    type: io.kestra.plugin.datastudio.permissions.Revoke
+                    serviceAccount: "{{ secret('GCP_SERVICE_ACCOUNT_JSON') }}"
+                    assetName: "{{ inputs.asset_id }}"
+                    members:
+                      - "user:former.analyst@acme.com"
+                """
+        )
+    }
+)
+public class Revoke extends AbstractDataStudioTask implements RunnableTask<Revoke.Output> {
+
+    @Schema(
+
+        title = "Asset name",
+
+        description = """
+
+            The Data Studio asset ID.
+
+            """
+
+    )
+    @PluginProperty(group = "main")
+    @NotNull
+    private Property<String> assetName;
+
+    @Schema(
+        title = "Members",
+        description = """
+            Members to remove. Each entry must use `user:`, `group:`, `serviceAccount:`, `domain:`, or `allUsers`.
+            """
+    )
+    @PluginProperty(group = "main")
+    @NotNull
+    private Property<List<String>> members;
+
+    @Override
+    public Output run(RunContext runContext) throws Exception {
+        var rAssetName = runContext.render(this.assetName).as(String.class)
+            .orElseThrow(() -> new IllegalArgumentException("assetName is required"));
+        var rMembers = runContext.render(this.members).asList(String.class);
+        Members.validateRevoke(rMembers);
+
+        Permissions permissions;
+        try (var client = this.open(runContext, true)) {
+            runContext.logger().info("Revoking access on Data Studio asset {} for {}", rAssetName, rMembers);
+            permissions = client.revokeMembers(rAssetName, rMembers);
+        }
+        return Output.builder()
+            .permissions(Members.roleMap(permissions))
+            .size(Members.flatten(permissions).size())
+            .build();
+    }
+
+    @Builder
+    @Getter
+    public static class Output implements io.kestra.core.models.tasks.Output {
+
+        @Schema(title = "Updated permissions by role")
+        private final Map<String, List<String>> permissions;
+
+        @Schema(title = "Number of members on the asset after the update")
+        private final Integer size;
+    }
+}

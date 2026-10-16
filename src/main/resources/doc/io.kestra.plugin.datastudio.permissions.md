@@ -1,0 +1,3 @@
+List, grant, and revoke access to Data Studio reports and data sources.
+
+`Get` returns the members on an asset and requests the read-only Data Studio scope. `Add` grants `VIEWER` or `EDITOR` to `user:`, `group:`, `serviceAccount:`, and `domain:` members, and requests the read-write scope. `OWNER` cannot be granted. `allUsers` requires `linkRole` (`LINK_VIEWER` or `LINK_EDITOR`). `domain:` accepts either `role` or `linkRole`. Both `allUsers` and `domain:` require `allowLinkSharing: true`. A single call cannot mix named members with `allUsers`, because the API sends one role for every member. `Revoke` removes members that use `user:`, `group:`, `serviceAccount:`, `domain:`, or `allUsers`.
