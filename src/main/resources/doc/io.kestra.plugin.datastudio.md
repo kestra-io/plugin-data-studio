@@ -36,7 +36,7 @@ The API has no get-by-id method, so this task walks search pages and stops at th
 Lists who has access to one asset, grouped by role.
 
 - `assetName`: Asset id.
-- `fetchType`: `FETCH` returns every member and the role map. `FETCH_ONE` returns the first member and does not repeat the full role map. `STORE` writes an Ion file. `NONE` returns only the count.
+- `fetchType`: `FETCH` returns every member, each with its role. `FETCH_ONE` returns the first member. `STORE` writes an Ion file. `NONE` returns only the count. The role map is not returned again.
 
 ### Add
 

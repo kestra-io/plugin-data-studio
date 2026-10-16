@@ -16,6 +16,7 @@ import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.Signature;
 import java.time.Duration;
+import java.time.Instant;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Base64;
@@ -43,10 +44,12 @@ import io.kestra.plugin.datastudio.assets.Trigger;
 import io.kestra.plugin.datastudio.permissions.Add;
 import io.kestra.plugin.datastudio.permissions.AssetRole;
 import io.kestra.plugin.datastudio.permissions.LinkRole;
+import io.kestra.plugin.datastudio.models.AssetOrder;
 import io.kestra.plugin.datastudio.models.AssetType;
 import io.kestra.plugin.datastudio.permissions.Revoke;
 
 import jakarta.inject.Inject;
+import jakarta.validation.ConstraintViolationException;
 import org.junit.jupiter.api.Test;
 
 @KestraTest(startRunner = false, startWorker = false)
@@ -243,8 +246,126 @@ class DataStudioTest {
                 .build();
             var listed = permissions.run(TestsUtils.mockRunContext(this.runContextFactory, permissions, Map.of()));
             assertEquals("user:ada@acme.com", listed.getMember().getMember());
-            assertNull(listed.getPermissions());
             assertNull(listed.getMembers());
+        }
+    }
+
+    @Test
+    void orderByUsesTheApiValue() throws Exception {
+        try (FakeApi api = FakeApi.start()) {
+            api.searchBody = """
+                {"assets":[]}
+                """;
+            Search search = Search.builder()
+                .id(taskId())
+                .type(Search.class.getName())
+                .accessToken(Property.ofValue("token-1"))
+                .baseUrl(Property.ofValue(api.baseUrl()))
+                .assetTypes(Property.ofValue(List.of(AssetType.REPORT)))
+                .orderBy(Property.ofValue(AssetOrder.LAST_VIEWED_BY_ME))
+                .fetchType(Property.ofValue(FetchType.NONE))
+                .build();
+            search.run(TestsUtils.mockRunContext(this.runContextFactory, search, Map.of()));
+            assertTrue(api.lastQuery.contains("orderBy=last_viewed_by_me"));
+        }
+    }
+
+    @Test
+    void zeroPageBoundsAreRejected() {
+        Search noPages = Search.builder()
+            .id(taskId())
+            .type(Search.class.getName())
+            .accessToken(Property.ofValue("token-1"))
+            .assetTypes(Property.ofValue(List.of(AssetType.REPORT)))
+            .maxPages(Property.ofValue(0))
+            .build();
+        ConstraintViolationException pages = assertThrows(
+            ConstraintViolationException.class,
+            () -> noPages.run(TestsUtils.mockRunContext(this.runContextFactory, noPages, Map.of()))
+        );
+        assertTrue(pages.getMessage().contains("maxPages"));
+
+        Search noSize = Search.builder()
+            .id(taskId())
+            .type(Search.class.getName())
+            .accessToken(Property.ofValue("token-1"))
+            .assetTypes(Property.ofValue(List.of(AssetType.REPORT)))
+            .pageSize(Property.ofValue(0))
+            .build();
+        ConstraintViolationException size = assertThrows(
+            ConstraintViolationException.class,
+            () -> noSize.run(TestsUtils.mockRunContext(this.runContextFactory, noSize, Map.of()))
+        );
+        assertTrue(size.getMessage().contains("pageSize"));
+    }
+
+    @Test
+    void fractionalUpdateTimeIsAnInstant() throws Exception {
+        try (FakeApi api = FakeApi.start()) {
+            api.searchBody = """
+                {"assets":[{"name":"report-1","title":"Sales","assetType":"REPORT","updateTime":"2026-04-01T10:11:12.123456Z"}]}
+                """;
+            Get get = Get.builder()
+                .id(taskId())
+                .type(Get.class.getName())
+                .accessToken(Property.ofValue("token-1"))
+                .baseUrl(Property.ofValue(api.baseUrl()))
+                .assetName(Property.ofValue("report-1"))
+                .assetTypes(Property.ofValue(List.of(AssetType.REPORT)))
+                .build();
+            Get.Output output = get.run(TestsUtils.mockRunContext(this.runContextFactory, get, Map.of()));
+            assertEquals(Instant.parse("2026-04-01T10:11:12.123456Z"), output.getAsset().getUpdateTime());
+        }
+    }
+
+    @Test
+    void unknownAssetTypeDoesNotFailTheSearch() throws Exception {
+        try (FakeApi api = FakeApi.start()) {
+            api.searchBody = """
+                {"assets":[{"name":"report-1","title":"Sales","assetType":"ASSET_TYPE_UNSPECIFIED","updateTime":"2026-04-01T00:00:00Z"},{"name":"report-2","title":"Other","assetType":"report","updateTime":"2026-04-01T00:00:00Z"}]}
+                """;
+            Search search = Search.builder()
+                .id(taskId())
+                .type(Search.class.getName())
+                .accessToken(Property.ofValue("token-1"))
+                .baseUrl(Property.ofValue(api.baseUrl()))
+                .assetTypes(Property.ofValue(List.of(AssetType.REPORT)))
+                .fetchType(Property.ofValue(FetchType.FETCH))
+                .build();
+            Search.Output output = search.run(TestsUtils.mockRunContext(this.runContextFactory, search, Map.of()));
+            assertEquals(2, output.getSize());
+            assertEquals(AssetType.UNKNOWN, output.getAssets().get(0).getAssetType());
+            assertEquals(AssetType.UNKNOWN, output.getAssets().get(1).getAssetType());
+        }
+    }
+
+    @Test
+    void triggerCapsAssetsAndKeepsTheFullSize() throws Exception {
+        try (FakeApi api = FakeApi.start()) {
+            api.searchBody = """
+                {"assets":[]}
+                """;
+            Trigger trigger = Trigger.builder()
+                .id("watch")
+                .type(Trigger.class.getName())
+                .accessToken(Property.ofValue("token-1"))
+                .baseUrl(Property.ofValue(api.baseUrl()))
+                .assetTypes(Property.ofValue(List.of(AssetType.REPORT)))
+                .maxAssetsInOutput(Property.ofValue(2))
+                .interval(Duration.ofMinutes(5))
+                .build();
+            var baseline = TestsUtils.mockTrigger(this.runContextFactory, trigger);
+            assertTrue(trigger.evaluate(baseline.getKey(), baseline.getValue()).isEmpty());
+
+            api.searchBody = """
+                {"assets":[{"name":"report-1","title":"One","assetType":"REPORT","updateTime":"2026-04-01T00:00:00Z"},{"name":"report-2","title":"Two","assetType":"REPORT","updateTime":"2026-04-02T00:00:00Z"},{"name":"report-3","title":"Three","assetType":"REPORT","updateTime":"2026-04-03T00:00:00Z"}]}
+                """;
+            var changed = TestsUtils.mockTrigger(this.runContextFactory, trigger);
+            var execution = trigger.evaluate(changed.getKey(), changed.getValue());
+            assertTrue(execution.isPresent());
+            var variables = execution.get().getTrigger().getVariables();
+            assertEquals(3, ((Number) variables.get("size")).intValue());
+            assertEquals(2, ((java.util.List<?>) variables.get("assets")).size());
         }
     }
 

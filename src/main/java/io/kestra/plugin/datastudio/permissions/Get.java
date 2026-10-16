@@ -92,7 +92,6 @@ public class Get extends AbstractDataStudioTask implements RunnableTask<Get.Outp
             .uri(stored.uri())
             .member(stored.one())
             .members(stored.many())
-            .permissions(FetchType.FETCH.equals(rFetchType) ? roleMap(permissions) : null)
             .build();
     }
 
@@ -144,14 +143,8 @@ public class Get extends AbstractDataStudioTask implements RunnableTask<Get.Outp
 
         @Schema(
             title = "Members",
-            description = "Set only when `fetchType` is FETCH."
+            description = "Set only when `fetchType` is FETCH. Each member includes its role, so the role map is not repeated."
         )
         private final List<Member> members;
-
-        @Schema(
-            title = "Permissions by role",
-            description = "Role name to member identifiers. Set only when `fetchType` is FETCH, so FETCH_ONE does not repeat the full member list."
-        )
-        private final Map<String, List<String>> permissions;
     }
 }

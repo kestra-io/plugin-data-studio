@@ -103,12 +103,12 @@ public class Add extends AbstractDataStudioTask implements RunnableTask<Add.Outp
         var rLinkRole = runContext.render(this.linkRole).as(LinkRole.class).orElse(null);
         var rAllowLinkSharing = runContext.render(this.allowLinkSharing).as(Boolean.class).orElse(false);
         var rMembers = runContext.render(this.members).asList(String.class);
-        String role = Members.grantRole(rRole, rLinkRole, rAllowLinkSharing, rMembers);
+        var rGrantRole = Members.grantRole(rRole, rLinkRole, rAllowLinkSharing, rMembers);
 
         Permissions permissions;
         try (DataStudioClient client = this.open(runContext, true)) {
-            runContext.logger().info("Granting {} on Data Studio asset {} to {}", role, rAssetName, rMembers);
-            permissions = client.addMembers(rAssetName, role, rMembers);
+            runContext.logger().info("Granting {} on Data Studio asset {} to {}", rGrantRole, rAssetName, rMembers);
+            permissions = client.addMembers(rAssetName, rGrantRole, rMembers);
         }
         return Output.builder()
             .permissions(Get.roleMap(permissions))

@@ -16,6 +16,8 @@ import java.util.List;
 import java.util.Map;
 
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import io.kestra.core.http.HttpRequest;
 import io.kestra.core.http.HttpResponse;
@@ -39,6 +41,8 @@ import io.kestra.plugin.datastudio.models.SearchResponse;
  * {@code datastudio}.
  */
 public final class DataStudioClient implements AutoCloseable {
+    private static final ObjectMapper JSON = JacksonMapper.ofJson().copy()
+        .enable(DeserializationFeature.READ_UNKNOWN_ENUM_VALUES_USING_DEFAULT_VALUE);
 
     public static final String READ_SCOPE = "https://www.googleapis.com/auth/datastudio.readonly";
     public static final String WRITE_SCOPE = "https://www.googleapis.com/auth/datastudio";
@@ -216,7 +220,7 @@ public final class DataStudioClient implements AutoCloseable {
         if (body.isBlank()) {
             return type.getDeclaredConstructor().newInstance();
         }
-        return JacksonMapper.ofJson().readValue(body, type);
+        return JSON.readValue(body, type);
     }
 
     private static String exchangeServiceAccount(RunContext runContext, HttpClient httpClient, String serviceAccount, String subject, String tokenUri, String scope) throws Exception {

@@ -39,7 +39,7 @@ public class Asset {
     @Schema(title = "Update time")
     private Instant updateTime;
 
-    @Schema(title = "Asset type", description = "REPORT or DATA_SOURCE.")
+    @Schema(title = "Asset type", description = "REPORT or DATA_SOURCE. An unexpected API value is UNKNOWN, so one asset does not fail the whole response.")
     private AssetType assetType;
 
     @Schema(title = "Trashed", description = "True when the asset is in the trash.")
