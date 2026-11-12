@@ -45,8 +45,8 @@ class RunnerTest {
     }
 
     @Test
-    @ExecuteFlow("sanity-checks/datastudio_search.yaml")
-    void datastudio_search(Execution execution) {
+    @ExecuteFlow("sanity-checks/all_datastudio.yaml")
+    void all_datastudio(Execution execution) {
         assertThat(execution.getTaskRunList(), hasSize(2));
         assertThat(execution.getState().getCurrent(), is(State.Type.SUCCESS));
     }

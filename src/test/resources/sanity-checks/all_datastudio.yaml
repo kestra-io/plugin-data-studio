@@ -1,4 +1,5 @@
-id: datastudio_search
+# Needs the fake API started by RunnerTest, so it is on the skip list in kestra-io/sanity-checks.
+id: all_datastudio
 namespace: sanity.datastudio
 
 tasks:
